@@ -127,8 +127,11 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 .PRECIOUS: %.o
 
 UPROGS=\
+	$U/_bf\
 	$U/_cat\
+	$U/_clear\
 	$U/_echo\
+	$U/_ed\
 	$U/_forktest\
 	$U/_grep\
 	$U/_init\
@@ -141,8 +144,6 @@ UPROGS=\
 	$U/_stressfs\
 	$U/_usertests\
 	$U/_login\
-	$U/_ed\
-	$U/_clear\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
@@ -202,3 +203,4 @@ check-qemu-version:
 .PHONY: fmt
 fmt:
 	clang-format -i $(wildcard kernel/*.[ch] user/*.[ch] mkfs/*.c)
+
