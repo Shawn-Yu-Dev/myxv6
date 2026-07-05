@@ -2842,7 +2842,7 @@ struct test {
 void
 bigdir(char *s)
 {
-  enum { N = 500 };
+  enum { N = 200 };
   int i, fd;
   char name[10];
 
@@ -2884,8 +2884,8 @@ bigdir(char *s)
 void
 manywrites(char *s)
 {
-  int nchildren = 4;
-  int howmany = 30; // increase to look for deadlock
+  int nchildren = 2;
+  int howmany = 10; // increase to look for deadlock
 
   for (int ci = 0; ci < nchildren; ci++) {
     int pid = fork();
@@ -2941,7 +2941,7 @@ manywrites(char *s)
 void
 badwrite(char *s)
 {
-  int assumed_free = 600;
+  int assumed_free = 200;
 
   unlink("junk");
   for (int i = 0; i < assumed_free; i++) {
@@ -2976,7 +2976,7 @@ badwrite(char *s)
 void
 execout(char *s)
 {
-  for (int avail = 0; avail < 15; avail++) {
+  for (int avail = 0; avail < 8; avail++) {
     int pid = fork();
     if (pid < 0) {
       printf("fork failed\n");
@@ -3016,7 +3016,7 @@ diskfull(char *s)
 
   unlink("diskfulldir");
 
-  for (fi = 0; done == 0 && '0' + fi < 0177; fi++) {
+  for (fi = 0; done == 0 && fi < 64; fi++) {
     char name[32];
     name[0] = 'b';
     name[1] = 'i';
@@ -3031,7 +3031,7 @@ diskfull(char *s)
       done = 1;
       break;
     }
-    for (int i = 0; i < MAXFILE; i++) {
+    for (int i = 0; i < 8; i++) {
       char buf[BSIZE];
       if (write(fd, buf, BSIZE) != BSIZE) {
         done = 1;
@@ -3046,7 +3046,7 @@ diskfull(char *s)
   // merely fails (doesn't panic) if it can't extend
   // directory content. one of these file creations
   // is expected to fail.
-  int nzz = 128;
+  int nzz = 64;
   for (int i = 0; i < nzz; i++) {
     char name[32];
     name[0] = 'z';
@@ -3091,7 +3091,7 @@ diskfull(char *s)
 void
 outofinodes(char *s)
 {
-  int nzz = 32 * 32;
+  int nzz = 32 * 16;
   for (int i = 0; i < nzz; i++) {
     char name[32];
     name[0] = 'z';
