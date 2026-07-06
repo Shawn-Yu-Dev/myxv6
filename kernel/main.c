@@ -14,6 +14,10 @@ main()
     consoleinit();
     printkinit();
     printk("\n");
+    printk("╔══ ╸X V 6 ╸ ══╗\n");
+    printk("║  [OS KERNEL] ║\n");
+    printk("╚══════════════╝\n");
+    printk("\n");
     printk("Welcome to My Custom Xv6!\n");
     printk("Xv6 is booting ...\n");
     printk("\n");

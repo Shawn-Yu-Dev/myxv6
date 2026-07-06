@@ -144,6 +144,7 @@ UPROGS=\
 	$U/_stressfs\
 	$U/_usertests\
 	$U/_login\
+	$U/_logo\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
