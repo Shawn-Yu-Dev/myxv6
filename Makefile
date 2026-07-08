@@ -133,6 +133,7 @@ UPROGS=\
 	$U/_echo\
 	$U/_ed\
 	$U/_forktest\
+	$U/_forth\
 	$U/_grep\
 	$U/_init\
 	$U/_kill\
