@@ -130,6 +130,7 @@ UPROGS=\
 	$U/_bf\
 	$U/_cat\
 	$U/_clear\
+	$U/_c4\
 	$U/_echo\
 	$U/_ed\
 	$U/_forktest\
