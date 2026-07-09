@@ -427,8 +427,24 @@ void compile_word(const char *word) {
     // 尝试用户自定义词或数字
     int entry = dict_find(word);
     if(entry != -1) {
-      printf("User word '%s' not compilable yet\n", word); exit(0);
+      // --- 核心修改：内联编译逻辑 ---
+      // 将该词定义区中的所有操作码直接复制到当前正在编译的词中
+      int ip = dict_code_off(entry);
+      while(1) {
+        unsigned char op = dict[ip++];
+        if(op == OP_RET) break; // 遇到结尾则停止拷贝
+        
+        dict_append_byte(op);
+        
+        // 如果拷贝的是常量指令，必须连同 4 字节数据一起拷贝
+        if(op == OP_LIT) {
+          for(int i = 0; i < 4; i++) {
+            dict_append_byte(dict[ip++]);
+          }
+        }
+      }
     } else {
+      // 保持原有的数字解析逻辑
       int val = 0, neg = 0;
       const char *p = word;
       if(*p == '-') { neg=1; p++; }
