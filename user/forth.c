@@ -2,6 +2,8 @@
 #include "kernel/types.h"
 #include "user.h"
 
+typedef unsigned long uintptr_t;
+
 #ifndef NULL
 #define NULL ((void*)0)
 #endif
@@ -14,6 +16,11 @@
 #define BUFLEN   128
 
 // ========== 虚拟机状态 ==========
+
+#define HEAP_SIZE 256
+int user_heap[HEAP_SIZE];        // 用于 @ ! 的安全内存
+int heap_ptr = 0;                // 简单分配指针
+
 int  dstack[DSIZE];
 int  dsp;
 int  rstack[RSIZE];
@@ -40,6 +47,15 @@ enum OPCODE {
   OP_EQUAL, OP_LESS, OP_GREATER,
   OP_AND, OP_OR, OP_NOT,
   OP_DUP, OP_DROP, OP_SWAP, OP_OVER, OP_ROT, OP_DEPTH,
+  // ---- 新增操作码 ----
+  OP_FETCH,   // @  读取内存
+  OP_STORE,   // !  写入内存
+  OP_TOR,     // >r 压入返回栈
+  OP_FROMR,   // r> 弹出返回栈
+  OP_RFETCH,  // r@ 复制返回栈顶
+  OP_WORDS,   // words 列出所有单词
+  OP_DOTS,    // .s  打印数据栈快照
+  // -------------------
   OP_LIT, OP_BRANCH, OP_0BRANCH, OP_RET,
   OP_LASTOP
 };
@@ -144,6 +160,59 @@ void exec_builtin(int op) {
     case OP_OVER: a=dpop(); b=dtop(); dpush(a); dpush(b); break;
     case OP_ROT: { int c=dpop(), b=dpop(), a=dpop(); dpush(b); dpush(c); dpush(a); } break;
     case OP_DEPTH: dpush(dsp); break;
+
+    // ---- 新增操作实现 ----
+    case OP_FETCH: {   // @ ( idx -- n )  读取 user_heap[idx]
+      int idx = dpop();
+      if (idx < 0 || idx >= HEAP_SIZE) {
+        printf("Invalid fetch index %d (max %d)\n", idx, HEAP_SIZE - 1);
+        exit(0);
+      }
+      dpush(user_heap[idx]);
+      break;
+    }
+
+    case OP_STORE: {   // ! ( n idx -- )  写入 n 到 user_heap[idx]
+      int idx = dpop();
+      if (idx < 0 || idx >= HEAP_SIZE) {
+        printf("Invalid store index %d (max %d)\n", idx, HEAP_SIZE - 1);
+        exit(0);
+      }
+      int val = dpop();
+      user_heap[idx] = val;
+      break;
+    }
+
+    case OP_TOR:     // >r ( n -- ) ( R: -- n )
+      rpush(dpop());
+      break;
+
+    case OP_FROMR:   // r> ( -- n ) ( R: n -- )
+      dpush(rpop());
+      break;
+
+    case OP_RFETCH:  // r@ ( -- n ) ( R: n -- n )
+      if(rsp > 0) dpush(rstack[rsp-1]);
+      else { printf("Return stack empty\n"); exit(0); }
+      break;
+
+    case OP_WORDS: { // words ( -- ) 打印所有已定义词
+      int entry = last_entry;
+      while(entry != -1) {
+        printf("%s ", dict + entry + NAME_OFF);
+        entry = *(int *)(dict + entry + LINK_OFF);
+      }
+      printf("\n");
+      break;
+    }
+
+    case OP_DOTS:    // .s ( -- ) 打印数据栈快照
+      printf("<%d> ", dsp);
+      for(int i = 0; i < dsp; i++)
+        printf("%d ", dstack[i]);
+      printf("\n");
+      break;
+    // -------------------
     default: printf("Unknown built-in operation %d\n", op); exit(0);
   }
 }
@@ -186,9 +255,14 @@ int interpret(int entry) {
   }
 }
 
+// ---- 修改 add_builtin：branch/0branch 需要附加占位偏移量 ----
 void add_builtin(const char *name, int op) {
   dict_new_linked(name, 0);
   dict_append_byte(op);
+  // branch 和 0branch 后面必须跟着 4 字节偏移量，否则解释器会越界
+  if (op == OP_BRANCH || op == OP_0BRANCH) {
+    dict_append_int(0);   // 偏移量 0，相当于直接执行下一条指令
+  }
   dict_append_byte(OP_RET);
 }
 
@@ -233,6 +307,17 @@ void compile_word(const char *word) {
   else if(strcmp(word, "over")==0) dict_append_byte(OP_OVER);
   else if(strcmp(word, "rot")==0) dict_append_byte(OP_ROT);
   else if(strcmp(word, "depth")==0) dict_append_byte(OP_DEPTH);
+  // ---- 新增编译支持 ----
+  else if(strcmp(word, "@")==0) dict_append_byte(OP_FETCH);
+  else if(strcmp(word, "!")==0) dict_append_byte(OP_STORE);
+  else if(strcmp(word, ">r")==0) dict_append_byte(OP_TOR);
+  else if(strcmp(word, "r>")==0) dict_append_byte(OP_FROMR);
+  else if(strcmp(word, "r@")==0) dict_append_byte(OP_RFETCH);
+  else if(strcmp(word, "words")==0) dict_append_byte(OP_WORDS);
+  else if(strcmp(word, ".s")==0) dict_append_byte(OP_DOTS);
+  else if(strcmp(word, "branch")==0) dict_append_byte(OP_BRANCH);
+  else if(strcmp(word, "0branch")==0) dict_append_byte(OP_0BRANCH);
+  // -------------------
   else {
     int entry = dict_find(word);
     if(entry != -1) {
@@ -290,13 +375,7 @@ void outer_interpret() {
         start_compile(tok);
       } else if(strcmp(tok, "bye")==0) {
         exit(0);
-      } else if(strcmp(tok, "words")==0) {
-        int entry = last_entry;
-        while(entry != -1) {
-          printf("%s ", dict + entry + NAME_OFF);
-          entry = *(int *)(dict + entry + LINK_OFF);
-        }
-        printf("\n");
+      // 原来的 "words" 直接处理已移除，改为通过内建词 OP_WORDS 执行
       } else {
         int entry = dict_find(tok);
         if(entry != -1) {
@@ -344,6 +423,18 @@ void init_dict() {
   add_builtin("over",  OP_OVER);
   add_builtin("rot",   OP_ROT);
   add_builtin("depth", OP_DEPTH);
+
+  // ---- 新增内建词 ----
+  add_builtin("@",     OP_FETCH);
+  add_builtin("!",     OP_STORE);
+  add_builtin(">r",    OP_TOR);
+  add_builtin("r>",    OP_FROMR);
+  add_builtin("r@",    OP_RFETCH);
+  add_builtin("words", OP_WORDS);
+  add_builtin(".s",    OP_DOTS);
+  add_builtin("branch",  OP_BRANCH);
+  add_builtin("0branch", OP_0BRANCH);
+  // -------------------
 }
 
 int main() {
