@@ -1,0 +1,6 @@
+CompileFlags:
+  Add:
+    - -I.
+    - -I./kernel
+    - -I./user
+    - -target riscv64-unknown-elf
