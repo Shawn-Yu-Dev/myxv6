@@ -13,3 +13,4 @@ TAGS
 .idea/
 .venv/
 .vscode/
+compile_commands.json
