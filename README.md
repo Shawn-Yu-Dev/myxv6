@@ -15,7 +15,7 @@ editor, a login system, and more, all running directly in the OS.
 
 | Program | Description |
 |---------|-------------|
-| **`c4`** | A tiny **C compiler in 4 functions** — parses and executes a large subset of C, enough to be self-hosting. Ported from Robert Swierczek's c4. |
+| **`c4`** | A tiny **C compiler in 4 functions** — parses and executes a large subset of C, enough to be self-hosting. Now uses **AST-based code generation** (two-pass: parse → AST → bytecode walk). Ported from Robert Swierczek's c4. |
 | **`forth`** | A complete **Forth interpreter** with data/return stacks, a dictionary, memory access (`@`, `!`, `c@`, `c!`), I/O port operations, and interactive debugging. |
 | **`bf`** | A **Brainfuck interpreter** — load and run any `.bf` program on a 30,000-cell tape. |
 
@@ -135,11 +135,17 @@ boots xv6 inside QEMU.
 ### C4 — Run C programs inside xv6
 
 ```bash
-c4 hello.c
+c4 hello.c        # Run a C source file
+c4 -s hello.c     # Show source + opcode listing
+c4 -d hello.c     # Debug mode: print every executed instruction
 ```
 
 c4 can compile and execute a useful subset of C directly — no cross-compiler
-needed on your host.
+needed on your host. It features **AST-based code generation**: a two-pass
+compiler that builds a full AST first, then walks it to emit bytecodes.
+Supports `if`/`else`, `while`, `return`, compound statements, local/global
+variables, pointers, arrays (`a[i]`), `sizeof`, `enum`, function calls,
+and nested expressions with correct precedence.
 
 ### Forth — Interactive hardware debugger
 
