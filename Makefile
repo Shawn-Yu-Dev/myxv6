@@ -155,8 +155,16 @@ UPROGS=\
 	$U/_dorphan\
 	$U/_sync\
 
-fs.img: mkfs/mkfs $(UPROGS)
-	mkfs/mkfs fs.img $(UPROGS)
+C4_SRCS=\
+	$U/test_simple.c\
+	$U/tiny.c\
+	$U/hello.c\
+	$U/hello2.c\
+	$U/hello3.c\
+	$U/test_var.c\
+
+fs.img: mkfs/mkfs $(UPROGS) $(C4_SRCS)
+	mkfs/mkfs fs.img $(UPROGS) $(C4_SRCS)
 
 -include kernel/*.d user/*.d
 
