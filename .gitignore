@@ -14,3 +14,6 @@ TAGS
 .venv/
 .vscode/
 compile_commands.json
+
+# Test scripts
+test_*.py
