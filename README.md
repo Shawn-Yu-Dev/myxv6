@@ -1,8 +1,7 @@
-```
-╔══ ╸ X V 6 ╸ ══╗
-║  [OS KERNEL]  ║
-╚════════════════╝
-```
+
+# XV6  --OS KERNEL
+
+***write by Shawn-Yu-Dev***
 
 **My Custom Xv6** — a feature-packed fork of MIT's xv6 teaching OS for RISC-V.
 It extends the classic kernel with **on-board language interpreters**, a text
