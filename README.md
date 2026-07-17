@@ -16,7 +16,7 @@ directly in the OS, no cross-compiler needed.
 
 | Program | Description |
 |---------|-------------|
-| **`c4`** | A tiny C compiler in 4 functions — parses and executes a large subset of C, enough to be self-hosting. Uses **AST-based code generation** (two-pass: parse → AST → bytecode walk). Ported from Robert Swierczek's c4. |
+| **`c4`** | A tiny C compiler — parses and executes a useful subset of C, enough to be self-hosting. Split into three modules (`cvm.c` / `ast.c` / `run.c`) for clarity: the **AST parser** builds a syntax tree and emits relocatable bytecodes; the **VM** executes them. Bytecode can be saved to a `.s` file for later execution without recompilation. Ported from Robert Swierczek's c4. |
 | **`forth`** | A complete Forth interpreter with data/return stacks, dictionary, memory access (`@`, `!`, `c@`, `c!`), I/O port operations, and interactive debugging. |
 | **`bf`** | A Brainfuck interpreter — load and run any `.bf` program on a 30,000-cell tape. |
 
@@ -69,7 +69,11 @@ Login spawns the shell; exiting the shell returns to the login prompt.
 │   ├── trap.c     # Trap handling
 │   └── ...
 ├── user/          # User-space programs
-│   ├── c4.c       # C compiler
+│   ├── c4/         # C compiler (split into cvm.c / ast.c / run.c)
+│   │   ├── cvm.h    # Shared types, opcodes, and declarations
+│   │   ├── cvm.c    # VM base registers, tokenizer, opcode table
+│   │   ├── ast.c    # Parser, AST walker, code generator, main()
+│   │   └── run.c    # Bytecode interpreter + .s file loader
 │   ├── forth.c    # Forth interpreter
 │   ├── bf.c       # Brainfuck interpreter
 │   ├── ed.c       # Line editor
@@ -125,18 +129,60 @@ boots xv6 inside QEMU.
 
 ### C4 — Run C programs inside xv6
 
+**Compile / save / run separately:**
+
 ```bash
-c4 hello.c         # Run a C source file
-c4 -s hello.c      # Show source + opcode listing
-c4 -d hello.c      # Debug mode: print every executed instruction
+c4 hello.c                # Compile and run (backward compatible)
+c4 hello.c -s hello.s     # Compile to .s bytecode file (no execution)
+c4 hello.s                # Load and run from .s file (no recompilation)
+c4 -d hello.c             # Debug mode: print every executed instruction
 ```
 
-c4 compiles and executes a useful subset of C directly — no cross-compiler
-needed on your host. It features **AST-based code generation**: a two-pass
-compiler that builds a full AST, then walks it to emit bytecodes. Supports
-`if`/`else`, `while`, `return`, compound statements, local/global variables,
-pointers, arrays (`a[i]`), `sizeof`, `enum`, function calls, and nested
-expressions with correct precedence.
+**Compilation is now separate from execution.** Compile once to a
+human-readable `.s` bytecode file and run it many times:
+
+```
+c4 test_simple.c -s my.s
+c4 my.s
+```
+
+The `.s` file is a plain-text, assembly-like format you can inspect:
+
+```
+.entry 22
+.data 24
+8031924123371070824 748764258399186034 ...
+.code 25
+ENT 1
+LEA -1
+PSH
+IMM 42
+...
+JSR 0
+EXIT
+```
+
+**Architecture:** Split into three modules under `user/c4/`:
+
+| Module | File | Role |
+|--------|------|------|
+| **Syntax & VM** | `cvm.c` + `cvm.h` | Opcode/token definitions, tokenizer (`next()`), VM base registers |
+| **Parser & Codegen** | `ast.c` | Builds full AST, emits relocatable bytecodes, `.s` file saver |
+| **Interpreter** | `run.c` | Stack-based VM executing bytecodes, `.s` file loader |
+
+**Supported syntax:**
+
+| Category | Features |
+|----------|----------|
+| **Types** | `int`, `char`, pointers (`int*`, `char**`, ...) |
+| **Statements** | `if`/`else`, `while`, `return`, compound `{ }`, expression stmts |
+| **Operators** | Complete precedence: `=` `?:` `\|\|` `&&` `\|` `^` `&` `==` `!=` `<` `>` `<=` `>=` `<<` `>>` `+` `-` `*` `/` `%` `++` `--` `*`(deref) `&`(addr) `!` `~` `sizeof` `(type)` `a[i]` |
+| **Declarations** | Global/local variables, function params, `enum` |
+| **Built-ins** | `printf()`, `open()`, `read()`, `close()`, `malloc()`, `free()`, `memset()`, `memcmp()`, `exit()` |
+
+**Not supported:** `for`, `switch`/`case`, `do-while`, `break`, `continue`,
+`goto`, `struct`/`union`, `float`/`double`, array declarations (`int a[10]`),
+compound assignment (`+=`), comma operator.
 
 ### Forth — Interactive low-level playground
 

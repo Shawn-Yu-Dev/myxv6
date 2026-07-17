@@ -105,6 +105,12 @@ _%: %.o $(ULIB) $U/user.ld
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
+# c4 is split across three source files under user/c4/
+$U/_c4: $U/c4/cvm.o $U/c4/ast.o $U/c4/run.o $(ULIB) $U/user.ld
+	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $U/c4/cvm.o $U/c4/ast.o $U/c4/run.o $(ULIB)
+	$(OBJDUMP) -S $@ > $U/c4.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $U/c4.sym
+
 $U/usys.S : $U/usys.pl
 	perl $U/usys.pl > $U/usys.S
 
@@ -159,8 +165,6 @@ C4_SRCS=\
 	$U/test_simple.c\
 	$U/tiny.c\
 	$U/hello.c\
-	$U/hello2.c\
-	$U/hello3.c\
 	$U/test_var.c\
 
 fs.img: mkfs/mkfs $(UPROGS) $(C4_SRCS)
