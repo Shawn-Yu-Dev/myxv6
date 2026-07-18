@@ -162,10 +162,7 @@ UPROGS=\
 	$U/_sync\
 
 C4_SRCS=\
-	$U/test_simple.c\
-	$U/tiny.c\
 	$U/hello.c\
-	$U/test_var.c\
 
 fs.img: mkfs/mkfs $(UPROGS) $(C4_SRCS)
 	mkfs/mkfs fs.img $(UPROGS) $(C4_SRCS)
