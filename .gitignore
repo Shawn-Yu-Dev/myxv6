@@ -17,3 +17,9 @@ compile_commands.json
 
 # Test scripts
 test_*.py
+
+# c4 test programs
+user/t*.c
+user/tiny*.c
+user/c4test_*.c
+user/test_simple.c

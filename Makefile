@@ -163,6 +163,7 @@ UPROGS=\
 
 C4_SRCS=\
 	$U/hello.c\
+	$U/test_c89.c\
 
 fs.img: mkfs/mkfs $(UPROGS) $(C4_SRCS)
 	mkfs/mkfs fs.img $(UPROGS) $(C4_SRCS)

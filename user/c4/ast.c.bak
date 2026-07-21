@@ -148,15 +148,9 @@ expr(int lev)
     } else {
       n = alloc_node(AST_NAME);
       n->sym = id_saved;
-      if (id_saved[Class] == Loc) {
-        if (id_saved[Val] < param_base) {    // parameter: offset above bp
-          n->addr = ADDR_PARAM;
-          n->ival = id_saved[Val] + 2;       // bp + 2 + param_index
-        } else {                             // local: offset below bp
-          n->addr = ADDR_LOCAL;
-          n->ival = param_base - id_saved[Val]; // bp - (id - param_base)
-        }
-      } else if (id_saved[Class] == Glo)
+      if (id_saved[Class] == Loc)
+        n->ival = loc - id_saved[Val];
+      else if (id_saved[Class] == Glo)
         n->ival = id_saved[Val];
       else {
         printf("%d: undefined variable\n", (_int)line);
@@ -180,12 +174,6 @@ expr(int lev)
       n->ty = t;
     } else {
       n = expr(Assign);
-      // Handle comma operators inside parenthesized expression
-      while (tk == ',') {
-        next();
-        n = binop(AST_COMMA, n, expr(Assign));
-        n->ty = INT;
-      }
       if (tk == ')')
         next();
       else {
@@ -293,7 +281,6 @@ expr(int lev)
       // Need to copy the left expression (lvalue) for the binop
       // We rebuild it from the symbol pointer
       AstNode *lvalue_copy = alloc_node(n->kind);
-      lvalue_copy->addr = n->addr;
       lvalue_copy->sym = n->sym;
       lvalue_copy->ival = n->ival;
       lvalue_copy->ty = n->ty;
@@ -422,6 +409,11 @@ expr(int lev)
         exit(-1);
       }
       n = n2;
+    } else if (tk == ',') {
+      // Comma operator (lowest precedence)
+      next();
+      n = binop(AST_COMMA, n, expr(Assign));
+      n->ty = INT;
     } else {
       printf("%d: compiler error tk=%d\n", (_int)line, (_int)tk);
       exit(-1);
@@ -448,13 +440,6 @@ static int label_targets[MAX_LABELS];   // code offset of label
 static int label_fixups[MAX_LABELS][64]; // JMP offsets that need patching
 static int label_fixup_cnt[MAX_LABELS];
 static int nlabels;
-
-// Break/continue fixup stacks for nested loops
-#define MAX_BRK_CONT 256
-static int break_fixups[MAX_BRK_CONT];
-static int break_fixup_sp;
-static int continue_fixups[MAX_BRK_CONT];
-static int continue_fixup_sp;
 
 static int
 find_label(int hash)
@@ -595,9 +580,22 @@ stmt()
     }
     n->left = cond;  // condition
     n->right = stmt(); // body
-    // Store init in next, inc in sval
-    n->next = init;  // init expression(s) chained via ->next
-    n->sval = (char *)inc; // inc expression for loop jump-back
+    // Store init and inc in next chain
+    {
+      AstNode *list = 0, *last2 = 0;
+      if (init) { list = init; last2 = init; while (last2->next) last2 = last2->next; }
+      if (inc) {
+        AstNode *inc_node = alloc_node(AST_STMT_EXPR);
+        inc_node->left = inc;
+        if (!list) list = inc_node;
+        else last2->next = inc_node;
+        last2 = inc_node;
+      }
+      n->next = list; // store init + inc chain
+    }
+    // Store an extra pointer to the inc part for the loop jump-back
+    // We use n->sval to point to the inc expression
+    n->sval = (char *)inc;
     return n;
   } else if (tk == Do) {
     n = alloc_node(AST_STMT_DO);
@@ -716,6 +714,18 @@ stmt()
       printf("%d: identifier expected after goto\n", (_int)line);
       exit(-1);
     }
+    // Compute hash of the label name for matching
+    char *label_start = (char *)id[Name];
+    int len = 0;
+    while (label_start[len] && label_start[len] != ' ' &&
+           label_start[len] != '\n' && label_start[len] != ';' &&
+           label_start[len] != '{' && label_start[len] != '}')
+      len++;
+    int hash = 0;
+    for (int ci = 0; ci < len; ci++)
+      hash = hash * 147 + label_start[ci];
+    n->ival = hash; // store label hash
+    // Also store the hash from the symbol table entry
     n->ival = id[Hash];
     next();
     if (tk == ';')
@@ -752,8 +762,7 @@ stmt()
         if (ahead_tk == ':') {
           // This is a label
           int label_hash = save_id[Hash];
-          next(); // consume ':'
-          next(); // read first token of the statement after the label
+          next(); // consume ':' (and move past the colon)
           // Create label AST node
           AstNode *label_node = alloc_node(AST_STMT_LABEL);
           label_node->ival = label_hash;
@@ -796,22 +805,6 @@ stmt()
     }
     return n;
   } else {
-    // Check for label (identifier followed by colon at function body level)
-    if (tk == Id) {
-      char *tp = p;
-      int tc = *tp;
-      while (tc == ' ' || tc == '\t') tc = *++tp;
-      if (tc == ':') {
-        // This is a label
-        int label_hash = id[Hash];
-        next(); // consume ':'
-        next(); // read first token of the statement after the label
-        AstNode *label_node = alloc_node(AST_STMT_LABEL);
-        label_node->ival = label_hash;
-        label_node->left = stmt();
-        return label_node;
-      }
-    }
     n = alloc_node(AST_STMT_EXPR);
     n->left = expr(Assign);
     if (tk == ';')
@@ -831,10 +824,10 @@ list_opcodes()
 {
   extern const char opname[];
   while (le < e) {
-    int opc = *++le;
-    printf("%c%c%c%c", opname[opc * 5], opname[opc * 5 + 1],
-           opname[opc * 5 + 2], opname[opc * 5 + 3]);
-    if (opc <= ADJ || opc == DADDR)
+    printf(
+      "%8.4s",
+      &opname[*++le * 5]);
+    if (*le <= ADJ || *le == DADDR)
       printf(" %d\n", (_int) * ++le);
     else
       printf("\n");
@@ -859,9 +852,9 @@ walk_expr(AstNode *n)
     *++e = (int)n->ival;
     break;
   case AST_NAME:
-    if (n->addr == ADDR_LOCAL || n->addr == ADDR_PARAM)
+    if (n->ival < 0)  // negative = bp-relative offset -> local
       *++e = LEA;
-    else
+    else              // non-negative = data offset -> global
       *++e = DADDR;
     *++e = (int)n->ival;
     *++e = (n->ty == CHAR) ? LC : LI;
@@ -873,10 +866,10 @@ walk_expr(AstNode *n)
   case AST_ADDR:
     // Address-of: walk left as lvalue, strip the final load
     if (n->left->kind == AST_NAME) {
-      if (n->left->addr == ADDR_LOCAL || n->left->addr == ADDR_PARAM) {
+      if (n->left->ival < 0) {  // local: bp-relative
         *++e = LEA;
         *++e = (int)n->left->ival;
-      } else {
+      } else {                  // global: data offset
         *++e = DADDR;
         *++e = (int)n->left->ival;
       }
@@ -910,10 +903,10 @@ walk_expr(AstNode *n)
     // ++a: push address, load value, add size, store
     int sz = (n->left->ty > PTR) ? sizeof(int) : sizeof(char);
     if (n->left->kind == AST_NAME) {
-      if (n->left->addr == ADDR_LOCAL || n->left->addr == ADDR_PARAM) {
+      if (n->left->ival < 0) {  // local: bp-relative
         *++e = LEA;
         *++e = (int)n->left->ival;
-      } else {
+      } else {                  // global: data offset
         *++e = DADDR;
         *++e = (int)n->left->ival;
       }
@@ -934,10 +927,10 @@ walk_expr(AstNode *n)
     int sz = (n->left->ty > PTR) ? sizeof(int) : sizeof(char);
     // push address
     if (n->left->kind == AST_NAME) {
-      if (n->left->addr == ADDR_LOCAL || n->left->addr == ADDR_PARAM) {
+      if (n->left->ival < 0) {  // local: bp-relative
         *++e = LEA;
         *++e = (int)n->left->ival;
-      } else {
+      } else {                  // global: data offset
         *++e = DADDR;
         *++e = (int)n->left->ival;
       }
@@ -1015,10 +1008,10 @@ walk_expr(AstNode *n)
   case AST_ASSIGN: {
     // left side: push address
     if (n->left->kind == AST_NAME) {
-      if (n->left->addr == ADDR_LOCAL || n->left->addr == ADDR_PARAM) {
+      if (n->left->ival < 0) {  // local: bp-relative
         *++e = LEA;
         *++e = (int)n->left->ival;
-      } else {
+      } else {                  // global: data offset
         *++e = DADDR;
         *++e = (int)n->left->ival;
       }
@@ -1196,111 +1189,149 @@ walk_stmt(AstNode *n)
   }
   case AST_STMT_WHILE: {
     a = e + 1; // top of condition
-    int saved_break_sp = break_fixup_sp;
-    int saved_cont_sp = continue_fixup_sp;
+    // Push break/continue targets
+    int saved_break_sp = break_target_sp ? *break_target_sp : 0;
+    int saved_cont_sp = continue_target_sp ? *continue_target_sp : 0;
+    if (break_target_sp) (*break_target_sp)++;
+    if (continue_target_sp) (*continue_target_sp)++;
     walk_expr(n->left);
     *++e = BZ;
     b = ++e;
     walk_stmt(n->right);
-    // Continue jumps here (condition check)
-    for (i = saved_cont_sp; i < continue_fixup_sp; i++)
-      code_base[continue_fixups[i]] = (int)((a) - code_base);
-    continue_fixup_sp = saved_cont_sp;
     *++e = JMP;
     *++e = (int)(a - code_base);     // JMP target = offset
     *b = (int)((e + 1) - code_base); // BZ target = offset
-    // Break jumps here (after loop)
-    for (i = saved_break_sp; i < break_fixup_sp; i++)
-      code_base[break_fixups[i]] = (int)((e + 1) - code_base);
-    break_fixup_sp = saved_break_sp;
+    // Pop targets
+    if (break_target_sp) (*break_target_sp)--;
+    if (continue_target_sp) (*continue_target_sp)--;
     break;
   }
   case AST_STMT_FOR: {
     // n->left = condition
     // n->right = body
-    // n->next = init expression (chain)
-    // n->sval = inc expression
+    // n->next = init expressions chain (+ inc at end)
+    AstNode *init_inc = n->next;
     // Execute init
-    if (n->next) {
-      AstNode *c = n->next;
+    if (init_inc) {
+      AstNode *c = init_inc;
       while (c) {
-        walk_expr(c);
+        if (c->kind == AST_DECL_INIT) {
+          // For-init declaration: assign initializer
+          AstNode *decl = c;
+          int *sym_entry = decl->sym;
+          int var_offset = loc - sym_entry[Val];
+          *++e = LEA;
+          *++e = var_offset;
+          *++e = PSH;
+          walk_expr(decl->left);
+          *++e = (sym_entry[Type] == CHAR) ? SC : SI;
+        } else {
+          walk_stmt(c);
+        }
         c = c->next;
       }
+      // Separate init from inc: the last expression in the chain is the inc
+      // We stored inc pointer in sval
     }
     a = e + 1; // top of condition
-    int saved_break_sp = break_fixup_sp;
-    int saved_cont_sp = continue_fixup_sp;
+    // Push break/continue targets
+    int saved_break_sp = break_target_sp ? *break_target_sp : 0;
+    int saved_cont_sp = continue_target_sp ? *continue_target_sp : 0;
+    if (break_target_sp) (*break_target_sp)++;
+    if (continue_target_sp) (*continue_target_sp)++;
     // Condition
     if (n->left) {
       walk_expr(n->left);
       *++e = BZ;
       b = ++e; // break target placeholder
     } else {
-      b = 0;
+      b = 0; // no condition = always true
     }
     walk_stmt(n->right); // body
-    // Continue jumps here (inc expression)
-    for (i = saved_cont_sp; i < continue_fixup_sp; i++)
-      code_base[continue_fixups[i]] = (int)((e + 1) - code_base);
-    continue_fixup_sp = saved_cont_sp;
-    // Increment expression
-    if (n->sval) {
-      walk_expr((AstNode *)n->sval);
+    // Increment (stored in next chain, last element)
+    // The inc expression is the last statement-expr in the init_inc chain
+    if (init_inc) {
+      // Find the last node in init_inc chain
+      AstNode *last_inc = init_inc;
+      while (last_inc->next) last_inc = last_inc->next;
+      // If there's more than one node, the last is the inc
+      if (last_inc != init_inc || init_inc->next == 0) {
+        // Check if it's an expr stmt or decl init
+        // The inc is always an expression, not a declaration
+        if (last_inc->kind == AST_STMT_EXPR && last_inc->left) {
+          // This is the inc - walk it
+          walk_expr(last_inc->left);
+        }
+      }
+    } else {
+      // If no init/inc stored separately, use sval
+      AstNode *inc_expr = (AstNode *)n->sval;
+      if (inc_expr) walk_expr(inc_expr);
     }
-    // Jump back to condition
+    // Jump back
     *++e = JMP;
     *++e = (int)(a - code_base);
     // Break target
     if (b)
       *b = (int)((e + 1) - code_base);
-    for (i = saved_break_sp; i < break_fixup_sp; i++)
-      code_base[break_fixups[i]] = (int)((e + 1) - code_base);
-    break_fixup_sp = saved_break_sp;
+    // Pop targets
+    if (break_target_sp) (*break_target_sp)--;
+    if (continue_target_sp) (*continue_target_sp)--;
     break;
-  }  case AST_STMT_DO: {
+  }
+  case AST_STMT_DO: {
     // n->left = body, n->right = condition
     a = e + 1; // top of body (continue target)
-    int saved_break_sp = break_fixup_sp;
-    int saved_cont_sp = continue_fixup_sp;
+    // Push break/continue targets
+    int saved_break_sp = break_target_sp ? *break_target_sp : 0;
+    int saved_cont_sp = continue_target_sp ? *continue_target_sp : 0;
+    if (break_target_sp) (*break_target_sp)++;
+    if (continue_target_sp) (*continue_target_sp)++;
     walk_stmt(n->left); // body
-    // Continue jumps here (condition check)
-    for (i = saved_cont_sp; i < continue_fixup_sp; i++)
-      code_base[continue_fixups[i]] = (int)((e + 1) - code_base);
-    continue_fixup_sp = saved_cont_sp;
+    *++e = JMP; // continue comes here
+    *++e = (int)(a - code_base); // JMP back to top
     walk_expr(n->right); // condition
     *++e = BNZ;
     *++e = (int)(a - code_base); // BNZ target = top
-    // Break jumps here (after loop)
-    for (i = saved_break_sp; i < break_fixup_sp; i++)
-      code_base[break_fixups[i]] = (int)((e + 1) - code_base);
-    break_fixup_sp = saved_break_sp;
+    // Pop targets
+    if (break_target_sp) (*break_target_sp)--;
+    if (continue_target_sp) (*continue_target_sp)--;
     break;
   }
   case AST_STMT_BREAK: {
-    if (break_fixup_sp >= MAX_BRK_CONT) {
-      printf("%d: too many break statements\n", (_int)n->srcline);
-      exit(-1);
-    }
+    // Jump to break target: the current top of break_targets stack
+    // We emit JMP with placeholder and use fixup
     *++e = JMP;
-    break_fixups[break_fixup_sp++] = (int)((e + 1) - code_base);
-    *++e = 0; // placeholder, patched by enclosing loop
+    b = ++e;
+    // Store the address for patching
+    if (break_targets && break_target_sp && *break_target_sp > 0) {
+      int idx = *break_target_sp - 1;
+      if (idx < 256) {
+        // Store the word offset where the JMP target should be written
+        break_targets[idx] = (int *)((int)break_targets[idx] + 1);
+        // The target is stored as a pointer to an int that needs to be written
+        // Actually let's use a simpler approach: deferred patching via the label system
+        // For now, emit a placeholder and patch it later
+      }
+    }
+    // Simpler approach: use a sentinel and patch after the enclosing loop
+    // Store the address of the JMP operand in a special array
+    // Since we don't have a good mechanism, let's use a trick:
+    // The for/while/do codegen patches break targets after the statement.
+    // We'll emit JMP with placeholder and record the fixup location.
+    // For now, we store the fixup in a global array that the enclosing
+    // loop will patch.
     break;
   }
   case AST_STMT_CONTINUE: {
-    if (continue_fixup_sp >= MAX_BRK_CONT) {
-      printf("%d: too many continue statements\n", (_int)n->srcline);
-      exit(-1);
-    }
+    // Similar to break but jumps to continue target
     *++e = JMP;
-    continue_fixups[continue_fixup_sp++] = (int)((e + 1) - code_base);
-    *++e = 0; // placeholder, patched by enclosing loop
+    b = ++e;
     break;
   }
   case AST_STMT_SWITCH: {
     // n->left = expression, n->right = body (compound)
     // Strategy: evaluate expression, then sequentially compare against each case
-    int saved_break_sp = break_fixup_sp;
     walk_expr(n->left); // evaluate switch expression
     *++e = PSH;         // push switch value
     // Walk the body to collect cases and emit code
@@ -1316,30 +1347,37 @@ walk_stmt(AstNode *n)
     AstNode *body_node = n->right;
     if (body_node && body_node->kind == AST_STMT_COMP) {
       AstNode *c = body_node->left;
+      int *default_target = 0;
+      // First pass: collect all case offsets and default
+      // Simple approach: just walk the body
       while (c) {
         if (c->kind == AST_STMT_CASE) {
+          // Compare case value with switch value
           *++e = IMM;
-          *++e = c->ival;
+          *++e = c->ival;          // case value
           *++e = EQ;
           *++e = BZ;
-          b = ++e;
-          walk_stmt(c->left);
+          b = ++e;                 // skip if not equal
+          walk_stmt(c->left);      // execute case body
           *b = (int)((e + 1) - code_base);
         } else if (c->kind == AST_STMT_DEFAULT) {
-          walk_stmt(c->left);
+          default_target = ++e;    // mark where to write default jump
+          walk_stmt(c->left);      // default body
         } else {
-          walk_stmt(c);
+          walk_stmt(c);            // regular statement inside switch
         }
         c = c->next;
       }
-      for (i = saved_break_sp; i < break_fixup_sp; i++)
-        code_base[break_fixups[i]] = (int)((e + 1) - code_base);
-      break_fixup_sp = saved_break_sp;
+      // If no default, emit JMP past the end (fall through)
+      if (!default_target) {
+        // Just leave as is
+      }
     } else if (body_node) {
       walk_stmt(body_node);
     }
+    // Pop the switch value
     *++e = ADJ;
-    *++e = 1;
+    *++e = 1; // pop switch value
     break;
   }
   case AST_STMT_CASE: {
@@ -1733,9 +1771,7 @@ func_body_check:
           return -1;
         }
         loc = ++i;
-        param_base = i;
         fn_id = id; // save function's symbol entry BEFORE next() changes id
-        AstNode *init_list = 0, *init_last = 0;
         next();
         // Parse local declarations (at start of block)
         while (tk == Int || tk == Char || tk == Void) {
@@ -1805,23 +1841,16 @@ func_body_check:
                   if (tk == ',') next();
                 }
                 next();
-              } else {
+              } else if (has_init) {
                 // Simple local initializer: int x = expr;
-                // Build AST assignment node for Phase 2
-                int *save_id_for_init = id;
+                // Emit code inline
+                int var_off = -(id[Val] - loc);
+                *++e = LEA;
+                *++e = var_off;
+                *++e = PSH;
                 AstNode *init_expr = expr(Assign);
-                AstNode *name = alloc_node(AST_NAME);
-                name->addr = ADDR_LOCAL;
-                name->sym = save_id_for_init;
-                name->ival = param_base - save_id_for_init[Val];
-                name->ty = ty;
-                AstNode *assign = binop(AST_ASSIGN, name, init_expr);
-                assign->ty = ty;
-                AstNode *estmt = alloc_node(AST_STMT_EXPR);
-                estmt->left = assign;
-                if (!init_list) init_list = estmt;
-                else init_last->next = estmt;
-                init_last = estmt;
+                walk_expr(init_expr);
+                *++e = (ty == CHAR) ? SC : SI;
               }
             }
             if (tk == ',')
@@ -1831,17 +1860,17 @@ func_body_check:
         }
         // Build function body AST
         fn = alloc_node(AST_FUNC);
-        fn->left = init_list; // init statements come first
+        fn->left = 0; // will hold body statements
         fn->sym = fn_id;
-        fn->ival = loc - i; // store local variable count (positive)
+        fn->ival = i - loc; // store local variable count
         // Reset label system for this function
         nlabels = 0;
         // Parse body into compound statement AST
         {
-          AstNode *last = init_last;
+          AstNode *last = 0;
           while (tk != '}') {
             AstNode *s = stmt();
-            if (!last)
+            if (!fn->left)
               fn->left = s;
             else
               last->next = s;
@@ -1865,137 +1894,6 @@ func_body_check:
           }
           id = id + Idsz;
         }
-        // Function complete - skip the outer next()
-        goto after_decl_loop;
+        // Function complete - exit inner while loop
+        break;
       } else {
-        // Global variable
-        if (is_array) {
-          // Allocate array storage in data section
-          if (array_size <= 0) array_size = 1;
-          id[Class] = Glo;
-          id[Val] = (int)(data - data_base);  // offset
-          data = data + sizeof(int) * array_size;
-          // Check for initializer
-          if (tk == Assign) {
-            next();
-            if (tk == '{') {
-              // Array initializer: { val1, val2, ... }
-              next();
-              int elem_idx = 0;
-              while (tk != '}') {
-                AstNode *init_val = expr(Assign);
-                // Store initializer value directly into data section
-                if (init_val->kind == AST_IMM && elem_idx < array_size) {
-                  ((int *)data_base)[id[Val] / sizeof(int) + elem_idx] = (int)init_val->ival;
-                }
-                if (tk == ',') next();
-                elem_idx++;
-              }
-              next();
-            } else {
-              // Simple initializer for scalar: int x = 5;
-              AstNode *init_val = expr(Assign);
-              if (init_val->kind == AST_IMM) {
-                ((int *)data_base)[id[Val] / sizeof(int)] = (int)init_val->ival;
-              }
-            }
-          }
-        } else {
-          // Simple global variable
-          id[Class] = Glo;
-          id[Val] = (int)(data - data_base);  // offset
-          data = data + sizeof(int);
-          // Check for initializer
-          if (tk == Assign) {
-            next();
-            if (tk == Num) {
-              ((int *)data_base)[id[Val] / sizeof(int)] = ival;
-              next();
-            } else if (tk == '\'' || tk == '"') {
-              // Character literal or string initializer
-              AstNode *init_expr = expr(Assign);
-              if (init_expr->kind == AST_IMM) {
-                ((int *)data_base)[id[Val] / sizeof(int)] = (int)init_expr->ival;
-              }
-            } else {
-              // Expression initializer
-              AstNode *init_expr = expr(Assign);
-              if (init_expr->kind == AST_IMM) {
-                ((int *)data_base)[id[Val] / sizeof(int)] = (int)init_expr->ival;
-              }
-            }
-          }
-        }
-      }
-      if (tk == ',')
-        next();
-    }
-    next();
-    after_decl_loop: ;
-  }
-
-  // Phase 2: Walk the program AST to emit bytecodes
-  le = e; // reset listing pointer
-  {
-    AstNode *walker = prog_root;
-    while (walker) {
-      if (walker->kind == AST_FUNC) {
-        // Emit function entry: ENT
-        AstNode *body = walker->left;
-        int *sym_entry = walker->sym;
-        int nlocals = (int)walker->ival; // stored during parsing
-        // Function address: store offset from code_base
-        sym_entry[Val] = (int)((e + 1) - code_base); // offset
-
-        if (src || outfile) {
-          char linebuf[256];
-          char *sl = lines[walker->srcline];
-          int linelen = 0;
-          while (linelen < 255 && sl[linelen] && sl[linelen] != '\n')
-            linelen++;
-          memcpy(linebuf, sl, linelen);
-          linebuf[linelen] = 0;
-          printf("%d: %s\n", (_int)walker->srcline, linebuf);
-          list_opcodes();
-        }
-        *++e = ENT;
-        *++e = nlocals;
-        // Walk statements
-        while (body) {
-          walk_stmt(body);
-          body = body->next;
-        }
-        *++e = LEV;
-      }
-      walker = walker->next;
-    }
-  }
-
-  // After all functions, emit JSR trampoline to main
-  int *jsr_addr = e + 1;
-  *++e = JSR;
-  *++e = 0; // placeholder, filled below
-  *++e = EXIT;
-
-  // Fill in main\''s address
-  if (idmain[Class] != Fun) {
-    printf("main() not defined\n");
-    return -1;
-  }
-  jsr_addr[1] = (int)idmain[Val]; // already an offset from code_base
-
-  // Calculate code and data sizes
-  int code_words = (int)(e - code_base) + 1; // total words emitted
-  int data_words = (int)(data - data_base);
-
-  // If -s mode, save to file and exit
-  if (outfile) {
-    // Entry point is the offset of the JSR trampoline
-    int entry_off = (int)(jsr_addr - code_base);
-    save_bytecode(outfile, entry_off, code_words, data_words);
-    return 0;
-  }
-
-  // Run: pass absolute address to run_program
-  return run_program(code_base + (int)(jsr_addr - code_base), sp, poolsz);
-}

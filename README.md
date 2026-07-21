@@ -133,7 +133,7 @@ boots xv6 inside QEMU.
 
 ```bash
 c4 hello.c                # Compile and run (backward compatible)
-c4 hello.c -s hello.s     # Compile to .s bytecode file (no execution)
+c4 -s hello.s hello.c     # Compile to .s bytecode file (no execution)
 c4 hello.s                # Load and run from .s file (no recompilation)
 c4 -d hello.c             # Debug mode: print every executed instruction
 ```
@@ -142,7 +142,7 @@ c4 -d hello.c             # Debug mode: print every executed instruction
 human-readable `.s` bytecode file and run it many times:
 
 ```
-c4 test_simple.c -s my.s
+c4 -s my.s test_simple.c
 c4 my.s
 ```
 
@@ -167,22 +167,20 @@ EXIT
 | Module | File | Role |
 |--------|------|------|
 | **Syntax & VM** | `cvm.c` + `cvm.h` | Opcode/token definitions, tokenizer (`next()`), VM base registers |
-| **Parser & Codegen** | `ast.c` | Builds full AST, emits relocatable bytecodes, `.s` file saver |
+| **Parser & Codegen** | `ast.c` | Builds full AST, emits relocatable bytecodes, `.s` file saver; supports local var initializers, compound assignments, break/continue fixups |
 | **Interpreter** | `run.c` | Stack-based VM executing bytecodes, `.s` file loader |
 
 **Supported syntax:**
 
 | Category | Features |
 |----------|----------|
-| **Types** | `int`, `char`, pointers (`int*`, `char**`, ...) |
-| **Statements** | `if`/`else`, `while`, `return`, compound `{ }`, expression stmts |
-| **Operators** | Complete precedence: `=` `?:` `\|\|` `&&` `\|` `^` `&` `==` `!=` `<` `>` `<=` `>=` `<<` `>>` `+` `-` `*` `/` `%` `++` `--` `*`(deref) `&`(addr) `!` `~` `sizeof` `(type)` `a[i]` |
-| **Declarations** | Global/local variables, function params, `enum` |
+| **Types** | `int`, `char`, `void`, pointers (`int*`, `char**`, ...) |
+| **Statements** | `if`/`else`, `while`, `do-while`, `for`, `return`, `switch`/`case`/`default`, `break`, `continue`, `goto`/labels, compound `{ }`, expression stmts |
+| **Operators** | Complete precedence: `=` `?:` `\|\|` `&&` `\|` `^` `&` `==` `!=` `<` `>` `<=` `>=` `<<` `>>` `+` `-` `*` `/` `%` `++` `--` `*`(deref) `&`(addr) `!` `~` `sizeof` `(type)` `a[i]`, compound assignment (`+=` `-=` `*=` `/=` `%=` `<<=` `>>=` `&=` `\|=` `^=`), comma operator |
+| **Declarations** | Global/local variables with initializers, arrays, function params, `enum` |
 | **Built-ins** | `printf()`, `open()`, `read()`, `close()`, `malloc()`, `free()`, `memset()`, `memcmp()`, `exit()` |
 
-**Not supported:** `for`, `switch`/`case`, `do-while`, `break`, `continue`,
-`goto`, `struct`/`union`, `float`/`double`, array declarations (`int a[10]`),
-compound assignment (`+=`), comma operator.
+**Not supported:** `struct`/`union`, `float`/`double`.
 
 ### Forth — Interactive low-level playground
 

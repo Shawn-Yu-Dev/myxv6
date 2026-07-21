@@ -24,6 +24,20 @@ int *e, *le,    // current position in emitted code
   src,          // print source and assembly flag
   debug;        // print executed instructions
 
+// Parameter base offset for local/param distinction
+int param_base;
+
+// Break/continue target tracking
+int **break_targets;
+int *break_target_sp;
+int **continue_targets;
+int *continue_target_sp;
+
+// Switch case tracking
+int **case_offsets;
+int *case_offset_sp;
+int case_count;
+
 // Opcode name table (5 chars each, comma-separated, used for debug disassembly)
 const char opname[] =
   "LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,DADR,LI  ,LC  ,SI  ,SC  ,PSH ,"
@@ -83,10 +97,30 @@ next()
       tk = Num;
       return;
     } else if (tk == '/') {
-      if (*p == '/') {
+      if (*p == '=') {
+        ++p;
+        tk = DivAssign;
+        return;
+      } else if (*p == '/') {
         ++p;
         while (*p != 0 && *p != '\n')
           ++p;
+      } else if (*p == '*') {
+        ++p; // skip '*'
+        // skip block comment
+        while (*p) {
+          if (*p == '*' && *(p+1) == '/') {
+            p += 2;
+            break;
+          }
+          // Track newlines for line counting
+          if (*p == '\n') {
+            lines[line] = lp;
+            lp = p + 1;
+            ++line;
+          }
+          ++p;
+        }
       } else {
         tk = Div;
         return;
@@ -94,9 +128,19 @@ next()
     } else if (tk == '\'' || tk == '"') {
       pp = data;
       while (*p != 0 && *p != tk) {
-        if ((ival = *p++) == '\\') {
-          if ((ival = *p++) == 'n')
-            ival = '\n';
+        if (*p == '\\') {
+          ++p;
+          if (*p == 'n') ival = '\n';
+          else if (*p == 't') ival = '\t';
+          else if (*p == 'r') ival = '\r';
+          else if (*p == '0') ival = '\0';
+          else if (*p == '\\') ival = '\\';
+          else if (*p == '\'') ival = '\'';
+          else if (*p == '"') ival = '"';
+          else ival = *p;
+          ++p;
+        } else {
+          ival = *p++;
         }
         if (tk == '"')
           *data++ = ival;
@@ -118,6 +162,9 @@ next()
       if (*p == '+') {
         ++p;
         tk = Inc;
+      } else if (*p == '=') {
+        ++p;
+        tk = AddAssign;
       } else
         tk = Add;
       return;
@@ -125,6 +172,9 @@ next()
       if (*p == '-') {
         ++p;
         tk = Dec;
+      } else if (*p == '=') {
+        ++p;
+        tk = SubAssign;
       } else
         tk = Sub;
       return;
@@ -135,22 +185,24 @@ next()
       }
       return;
     } else if (tk == '<') {
-      if (*p == '=') {
+      if (*p == '<') {
+        ++p;
+        if (*p == '=') { ++p; tk = ShlAssign; }
+        else tk = Shl;
+      } else if (*p == '=') {
         ++p;
         tk = Le;
-      } else if (*p == '<') {
-        ++p;
-        tk = Shl;
       } else
         tk = Lt;
       return;
     } else if (tk == '>') {
-      if (*p == '=') {
+      if (*p == '>') {
+        ++p;
+        if (*p == '=') { ++p; tk = ShrAssign; }
+        else tk = Shr;
+      } else if (*p == '=') {
         ++p;
         tk = Ge;
-      } else if (*p == '>') {
-        ++p;
-        tk = Shr;
       } else
         tk = Gt;
       return;
@@ -158,6 +210,9 @@ next()
       if (*p == '|') {
         ++p;
         tk = Lor;
+      } else if (*p == '=') {
+        ++p;
+        tk = OrAssign;
       } else
         tk = Or;
       return;
@@ -165,17 +220,23 @@ next()
       if (*p == '&') {
         ++p;
         tk = Lan;
+      } else if (*p == '=') {
+        ++p;
+        tk = AndAssign;
       } else
         tk = And;
       return;
     } else if (tk == '^') {
-      tk = Xor;
+      if (*p == '=') { ++p; tk = XorAssign; }
+      else tk = Xor;
       return;
     } else if (tk == '%') {
-      tk = Mod;
+      if (*p == '=') { ++p; tk = ModAssign; }
+      else tk = Mod;
       return;
     } else if (tk == '*') {
-      tk = Mul;
+      if (*p == '=') { ++p; tk = MulAssign; }
+      else tk = Mul;
       return;
     } else if (tk == '[') {
       tk = Brak;

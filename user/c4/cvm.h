@@ -43,6 +43,19 @@ enum {
   Return,
   Sizeof,
   While,
+  For,
+  Do,
+  Switch,
+  Case,
+  Default,
+  Break,
+  Continue,
+  Goto,
+  Unsigned,
+  Signed,
+  Static,
+  Void,
+  Comma,
   Assign,
   Cond,
   Lor,
@@ -65,7 +78,18 @@ enum {
   Mod,
   Inc,
   Dec,
-  Brak
+  Brak,
+  // Compound assignment tokens (handled during parsing)
+  AddAssign,
+  SubAssign,
+  MulAssign,
+  DivAssign,
+  ModAssign,
+  ShlAssign,
+  ShrAssign,
+  AndAssign,
+  OrAssign,
+  XorAssign
 };
 
 // opcodes
@@ -113,7 +137,7 @@ enum {
 };
 
 // types
-enum { CHAR, INT, PTR };
+enum { CHAR, INT, PTR, VOID };
 
 // identifier offsets (since we can't create an ident struct)
 enum { Tk, Hash, Name, Class, Type, Val, HClass, HType, HVal, Idsz };
@@ -166,10 +190,29 @@ enum {
   AST_FUNC,
   AST_GLOBAL,
   AST_ENUM,
+  // New C89 statement nodes
+  AST_STMT_FOR,
+  AST_STMT_DO,
+  AST_STMT_BREAK,
+  AST_STMT_CONTINUE,
+  AST_STMT_SWITCH,
+  AST_STMT_CASE,
+  AST_STMT_DEFAULT,
+  AST_STMT_GOTO,
+  AST_STMT_LABEL,
+  // Comma operator
+  AST_COMMA,
+  // Declaration with initializer
+  AST_DECL_INIT,
+  // Array initializer list
+  AST_INIT_LIST,
 };
 
+// Address modes for AST_NAME nodes
+enum { ADDR_GLOBAL, ADDR_LOCAL, ADDR_PARAM };
+
 typedef struct AstNode {
-  int kind, ty;
+  int kind, ty, addr;
   long long ival;                      // literal value or symbol offset
   char *sval;                          // string literal data pointer
   int *sym;                            // symbol table entry pointer
@@ -185,6 +228,7 @@ extern int nlines;
 void next();
 AstNode *expr(int lev);
 AstNode *stmt();
+AstNode *decl_stmt();
 AstNode *alloc_node(int kind);
 AstNode *binop(int kind, AstNode *l, AstNode *r);
 void walk_expr(AstNode *n);
@@ -192,3 +236,17 @@ void walk_stmt(AstNode *n);
 int run_program(int *pc, int *sp, int poolsz);
 int run_bytecode_file(char *filename);
 void save_bytecode(char *filename, int entry_offset, int code_words, int data_words);
+
+// Parameter base offset for local/param distinction
+extern int param_base;
+
+// Break/continue target tracking for codegen
+extern int **break_targets;
+extern int *break_target_sp;
+extern int **continue_targets;
+extern int *continue_target_sp;
+
+// Switch case tracking
+extern int **case_offsets;
+extern int *case_offset_sp;
+extern int case_count;
