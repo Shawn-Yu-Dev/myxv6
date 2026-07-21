@@ -150,7 +150,7 @@ UPROGS=\
 	$U/_rm\
 	$U/_sh\
 	$U/_stressfs\
-	$U/_usertests\
+	$U/_kerneltests\
 	$U/_login\
 	$U/_logo\
 	$U/_grind\

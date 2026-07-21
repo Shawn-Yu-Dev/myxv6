@@ -9,8 +9,8 @@
 #include "kernel/riscv.h"
 
 //
-// Tests xv6 system calls.  usertests without arguments runs them all
-// and usertests <name> runs <name> test. The test runner creates for
+// Tests xv6 system calls.  kerneltests without arguments runs them all
+// and kerneltests <name> runs <name> test. The test runner creates for
 // each test a process and based on the exit status of the process,
 // the test runner reports "OK" or "FAILED".  Some tests result in
 // kernel printing usertrap messages, which can be ignored if test
@@ -23,7 +23,7 @@ char buf[BUFSZ];
 
 //
 // Section with tests that run fairly quickly.  Use -q if you want to
-// run just those.  Without -q usertests also runs the ones that take a
+// run just those.  Without -q kerneltests also runs the ones that take a
 // fair amount of time.
 //
 
@@ -1962,7 +1962,7 @@ iref(char *s)
 
 // test that fork fails gracefully
 // the forktest binary also does this, but it runs out of proc entries first.
-// inside the bigger usertests binary, we run out of memory first.
+// inside the bigger kerneltests binary, we run out of memory first.
 void
 forktest(char *s)
 {
@@ -2763,6 +2763,8 @@ lazy_sbrk(char *s)
   exit(0);
 }
 
+void execout(char *);
+
 struct test {
   void (*f)(char *);
   char *s;
@@ -2773,17 +2775,11 @@ struct test {
   {copyinstr2, "copyinstr2"},
   {copyinstr3, "copyinstr3"},
   {rwsbrk, "rwsbrk"},
-  {truncate1, "truncate1"},
-  {truncate2, "truncate2"},
-  {truncate3, "truncate3"},
   {openiputtest, "openiput"},
   {exitiputtest, "exitiput"},
   {iputtest, "iput"},
   {opentest, "opentest"},
   {writetest, "writetest"},
-  {writebig, "writebig"},
-  {createtest, "createtest"},
-  {dirtest, "dirtest"},
   {exectest, "exectest"},
   {pipe1, "pipe1"},
   {killstatus, "killstatus"},
@@ -2795,20 +2791,7 @@ struct test {
   {forkforkfork, "forkforkfork"},
   {reparent2, "reparent2"},
   {mem, "mem"},
-  {sharedfd, "sharedfd"},
-  {fourfiles, "fourfiles"},
-  {createdelete, "createdelete"},
-  {unlinkread, "unlinkread"},
-  {linktest, "linktest"},
-  {concreate, "concreate"},
-  {linkunlink, "linkunlink"},
-  {subdir, "subdir"},
   {bigwrite, "bigwrite"},
-  {bigfile, "bigfile"},
-  {fourteen, "fourteen"},
-  {rmdot, "rmdot"},
-  {dirfile, "dirfile"},
-  {iref, "iref"},
   {forktest, "forktest"},
   {sbrkbasic, "sbrkbasic"},
   {sbrkmuch, "sbrkmuch"},
@@ -2831,12 +2814,9 @@ struct test {
   {lazy_unmap, "lazy_unmap"},
   {lazy_copy, "lazy_copy"},
   {lazy_sbrk, "lazy_sbrk"},
+  {execout, "execout"},
   {0, 0},
 };
-
-//
-// Section with tests that take a fair bit of time
-//
 
 // directory that uses indirect blocks
 void
@@ -3119,16 +3099,6 @@ outofinodes(char *s)
   }
 }
 
-struct test slowtests[] = {
-  {bigdir, "bigdir"},
-  {manywrites, "manywrites"},
-  {badwrite, "badwrite"},
-  {execout, "execout"},
-  {diskfull, "diskfull"},
-  {outofinodes, "outofinodes"},
-
-  {0, 0},
-};
 
 //
 // drive tests
@@ -3199,7 +3169,7 @@ int
 drivetests(int quick, int continuous, char *justone)
 {
   do {
-    printf("usertests starting\n");
+    printf("kerneltests starting\n");
     int free0 = countfree();
     int free1 = 0;
     int ntests = 0;
@@ -3214,8 +3184,7 @@ drivetests(int quick, int continuous, char *justone)
     }
     if (!quick) {
       if (justone == 0)
-        printf("usertests slow tests starting\n");
-      n = runtests(slowtests, justone, continuous);
+        printf("kerneltests slow tests starting\n");
       if (n < 0) {
         if (continuous != 2) {
           return 1;
@@ -3254,7 +3223,7 @@ main(int argc, char *argv[])
   } else if (argc == 2 && argv[1][0] != '-') {
     justone = argv[1];
   } else if (argc > 1) {
-    printf("Usage: usertests [-c] [-C] [-q] [testname]\n");
+    printf("Usage: kerneltests [-c] [-C] [-q] [testname]\n");
     exit(1);
   }
   if (drivetests(quick, continuous, justone)) {

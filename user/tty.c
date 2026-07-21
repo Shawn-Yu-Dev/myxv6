@@ -5,11 +5,11 @@
 
 #define MAX_TTY 5
 #define CTRL_FILE "/tty_ctl"
-#define PREFIX 0x01
+#define CUR_FILE "/tty_cur"
 
 int active_tty = -1;
-int stdin_wr[MAX_TTY];   // write end to each shell's stdin
-int stdout_rd[MAX_TTY];  // read end from each shell's stdout
+int stdin_wr[MAX_TTY];
+int stdout_rd[MAX_TTY];
 int output_child = -1;
 
 void
@@ -31,6 +31,16 @@ draw_status(void)
 }
 
 void
+write_cur_tty(void)
+{
+  int fd = open(CUR_FILE, O_WRONLY | O_CREATE | O_TRUNC);
+  if (fd < 0) return;
+  char buf[2] = { (char)('0' + active_tty), '\n' };
+  write(fd, buf, 2);
+  close(fd);
+}
+
+void
 switch_tty(int new_tty)
 {
   if (new_tty < 0 || new_tty >= MAX_TTY || new_tty == active_tty) return;
@@ -41,6 +51,7 @@ switch_tty(int new_tty)
   }
 
   active_tty = new_tty;
+  write_cur_tty();
 
   output_child = fork();
   if (output_child < 0)
@@ -72,6 +83,26 @@ process_external_commands(void)
       switch_tty(buf[i] - '1');
 }
 
+void
+show_tty_number(void)
+{
+  int fd = open(CUR_FILE, O_RDONLY);
+  if (fd < 0) {
+    printf("TTY: not in multiplexer\n");
+    return;
+  }
+  char buf[4];
+  int n = read(fd, buf, sizeof(buf) - 1);
+  close(fd);
+  if (n > 0) {
+    buf[n] = '\0';
+    // buf is like "0\n"
+    int num = buf[0] - '0' + 1;
+    if (num >= 1 && num <= MAX_TTY)
+      printf("TTY: %d\n", num);
+  }
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -88,6 +119,16 @@ main(int argc, char *argv[])
     exit(0);
   }
 
+  // "tty" with no number suffix: check if multiplexer is running
+  // (CTRL_FILE exists → running as daemon; CUR_FILE exists → just check)
+  int fd = open(CUR_FILE, O_RDONLY);
+  if (fd >= 0) {
+    close(fd);
+    show_tty_number();
+    exit(0);
+  }
+
+  // Start multiplexer
   int pipe_in[2], pipe_out[2];
 
   for (int i = 0; i < MAX_TTY; i++) {
@@ -112,14 +153,12 @@ main(int argc, char *argv[])
       exit(1);
     }
 
-    // Parent: keep write end of stdin, read end of stdout
-    close(pipe_in[0]);  // close shell's read end of stdin
-    close(pipe_out[1]); // close shell's write end of stdout
+    close(pipe_in[0]);
+    close(pipe_out[1]);
     stdin_wr[i] = pipe_in[1];
     stdout_rd[i] = pipe_out[0];
   }
 
-  // Fork input helper
   int ctrl_pipe[2];
   pipe(ctrl_pipe);
 
@@ -134,6 +173,10 @@ main(int argc, char *argv[])
   close(ctrl_pipe[1]);
   pipe_noblock(ctrl_pipe[0]);
 
+  // Create mark file so "tty" command knows multiplexer is running
+  fd = open(CTRL_FILE, O_WRONLY | O_CREATE | O_TRUNC);
+  if (fd >= 0) close(fd);
+
   switch_tty(0);
 
   while (1) {
@@ -141,35 +184,16 @@ main(int argc, char *argv[])
     int n = read(ctrl_pipe[0], &c, 1);
 
     if (n > 0) {
-      if (c == PREFIX) {
-        char c2;
-        if (read(ctrl_pipe[0], &c2, 1) > 0) {
-          if (c2 >= '1' && c2 <= '0' + MAX_TTY)
-            switch_tty(c2 - '1');
-          else if (c2 == 't') {
-            write(1, "\nTTY ", 5);
-            write(1, "0123456789" + active_tty, 1);
-            write(1, "\n", 1);
-            draw_status();
-          } else if (c2 == 'a')
-            write(stdin_wr[active_tty], &c, 1);
-          else if (c2 == 'x')
-            goto cleanup;
-          else {
-            write(stdin_wr[active_tty], &c, 1);
-            write(stdin_wr[active_tty], &c2, 1);
-          }
-        }
-      } else
-        write(stdin_wr[active_tty], &c, 1);
+      write(stdin_wr[active_tty], &c, 1);
     } else {
       process_external_commands();
       pause(1);
     }
   }
 
-cleanup:
   if (output_child > 0) { kill(output_child); wait(0); }
   kill(helper); wait(0);
+  unlink(CTRL_FILE);
+  unlink(CUR_FILE);
   exit(0);
 }
