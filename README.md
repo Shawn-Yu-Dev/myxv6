@@ -37,7 +37,7 @@ login: root
 passwd: [redacted]
 ```
 
-Login spawns the shell; exiting the shell returns to the login prompt.
+Credentials are read from `/passwd` on the filesystem (format: `username:password`), not hardcoded in the binary. Login spawns the shell; exiting the shell returns to the login prompt.
 
 ### ⚙️ Kernel Enhancements
 
@@ -166,9 +166,9 @@ EXIT
 
 | Module | File | Role |
 |--------|------|------|
-| **Syntax & VM** | `cvm.c` + `cvm.h` | Opcode/token definitions, tokenizer (`next()`), VM base registers |
+| **Syntax & VM** | `cvm.c` + `cvm.h` | Opcode/token definitions, tokenizer (`next()`), VM base registers and sandbox bounds |
 | **Parser & Codegen** | `ast.c` | Builds full AST, emits relocatable bytecodes, `.s` file saver; supports local var initializers, compound assignments, break/continue fixups |
-| **Interpreter** | `run.c` | Stack-based VM executing bytecodes, `.s` file loader |
+| **Interpreter** | `run.c` | Stack-based VM executing bytecodes, `.s` file loader; includes memory/stack/jump bounds checking |
 
 **Supported syntax:**
 
@@ -235,3 +235,41 @@ For more information: <https://pdos.csail.mit.edu/6.1810/>
 ## 📬 Issues & Contributions
 
 Found a bug or have an idea? Open an issue or send a pull request.
+
+---
+
+## 📋 Changelog
+
+### 2026-07 — Bug & Security Fixes
+
+**c4 compiler / VM fixes:**
+
+| Fix | File | Description |
+|-----|------|-------------|
+| Escape sequences | `cvm.c` | Fixed `\t`, `\r`, `\\`, `\'`, `\"` handling |
+| `/=` tokenizer | `cvm.c` | Added missing `return` after DivAssign |
+| Local init code | `ast.c` | Init emitted before `ENT` — unreachable; now chained as AST nodes |
+| Negative nlocals | `ast.c` | Fixed `fn->ival = i - loc` sign error |
+| Local/param offsets | `ast.c` | Proper `addr` field (`ADDR_GLOBAL`/`ADDR_LOCAL`/`ADDR_PARAM`) instead of broken `ival<0` checks |
+| Compound assignment | `ast.c` | `lvalue_copy` missing `addr` field |
+| Break/continue | `ast.c` | Added fixup arrays for break/continue in while/for/do/switch |
+| Switch break | `ast.c` | Fixed saved_break_sp and patching in switch walker |
+| xv6 printf compat | `ast.c` | Replaced `%8.4s` and `%.*s` (unsupported by xv6) with manual formatting |
+| **Sandbox bounds** | `run.c` | LI/LC/SI/SC memory access validated; JMP/JSR/BZ/BNZ targets checked; PSH/ENT/ADJ/LEV stack bounds enforced |
+| **Format string** | `run.c` | PRTF format string pointer verified to be in data segment |
+| **Div by zero** | `run.c` | DIV/MOD return 0 instead of crashing |
+| **Loader overflow** | `run.c` | 32-bit integer overflow in bytecode size computation fixed |
+
+**User program fixes:**
+
+| Fix | File | Description |
+|-----|------|-------------|
+| **Hardcoded credentials** | `login.c` | Replaced `#define PASSWORD "root"` with file-based auth via `/passwd` |
+| **Tape pointer overflow** | `bf.c` | Added bounds checks to `>` and `<` (was unlimited `p++`/`p--`) |
+| **Stack buffer overflows** | `ed.c` | Added `k < sizeof(pat)-1` checks to all 6 pattern/replacement parsers |
+
+**Kernel fixes:**
+
+| Fix | File | Description |
+|-----|------|-------------|
+| **TRAPFRAME overlap** | `exec.c` | Added check preventing stack allocation from reaching `TRAPFRAME` (was causing `kernel panic`) |
