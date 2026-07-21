@@ -87,6 +87,9 @@ kexec(char *path, char **argv)
   // Make the first inaccessible as a stack guard.
   // Use the rest as the user stack.
   sz = PGROUNDUP(sz);
+  // Prevent overlap with TRAPFRAME (mapped by proc_pagetable)
+  if (sz + (USERSTACK + 1) * PGSIZE > TRAPFRAME)
+    goto bad;
   uint64 sz1;
   if ((sz1 = uvmalloc(pagetable, sz, sz + (USERSTACK + 1) * PGSIZE, PTE_W)) ==
       0)

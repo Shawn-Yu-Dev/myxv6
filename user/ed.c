@@ -796,6 +796,7 @@ int parse_one_addr(char **p, int *addr) {
         char pat[128];
         int k = 0;
         while (*s && *s != '/') {
+            if (k >= sizeof(pat) - 1) { while (*s && *s != '/') s++; break; }
             if (*s == '\\' && *(s+1) == '/') { s++; pat[k++] = '/'; s++; }
             else pat[k++] = *s++;
         }
@@ -828,6 +829,7 @@ int parse_one_addr(char **p, int *addr) {
         char pat[128];
         int k = 0;
         while (*s && *s != '?') {
+            if (k >= sizeof(pat) - 1) { while (*s && *s != '?') s++; break; }
             if (*s == '\\' && *(s+1) == '?') { s++; pat[k++] = '?'; s++; }
             else pat[k++] = *s++;
         }
@@ -1234,6 +1236,7 @@ int main(int argc, char *argv[]) {
             char rep[128];
             int k = 0;
             while (*ap && *ap != delim) {
+                if (k >= sizeof(pat) - 1) { while (*ap && *ap != delim) ap++; break; }
                 if (*ap == '\\' && *(ap+1) == delim) { ap++; pat[k++] = delim; ap++; }
                 else if (*ap == '\\' && *(ap+1) == '\\') { ap++; pat[k++] = '\\'; ap++; }
                 else pat[k++] = *ap++;
@@ -1247,6 +1250,7 @@ int main(int argc, char *argv[]) {
             while (*ap && *ap != delim && *ap != 'g' && *ap != 'G' &&
                    *ap != 'p' && *ap != 'l' && *ap != 'n' &&
                    !(*ap >= '0' && *ap <= '9')) {
+                if (k >= sizeof(rep) - 1) break;
                 if (*ap == '\\' && *(ap+1) == delim) { ap++; rep[k++] = delim; ap++; }
                 else if (*ap == '\\' && *(ap+1) == '\\') { ap++; rep[k++] = '\\'; ap++; }
                 else rep[k++] = *ap++;
@@ -1296,6 +1300,7 @@ int main(int argc, char *argv[]) {
             char pat[128];
             int k = 0;
             while (*ap && *ap != '/') {
+                if (k >= sizeof(pat) - 1) { while (*ap && *ap != '/') ap++; break; }
                 if (*ap == '\\' && *(ap+1) == '/') { ap++; pat[k++] = '/'; ap++; }
                 else pat[k++] = *ap++;
             }
@@ -1319,6 +1324,7 @@ int main(int argc, char *argv[]) {
             char pat[128];
             int k = 0;
             while (*ap && *ap != '/') {
+                if (k >= sizeof(pat) - 1) { while (*ap && *ap != '/') ap++; break; }
                 if (*ap == '\\' && *(ap+1) == '/') { ap++; pat[k++] = '/'; ap++; }
                 else pat[k++] = *ap++;
             }

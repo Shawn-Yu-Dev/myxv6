@@ -7,11 +7,39 @@
 #include "cvm.h"
 #include "kernel/fcntl.h"
 
+static void
+vm_abort(void)
+{
+  printf("VM security violation\n");
+  exit(-1);
+}
+
+static int
+valid_read_addr(void *addr)
+{
+  char *c = (char *)addr;
+  return (c >= data_base && c < data_end) ||
+         (c >= (char *)stack_base && c < (char *)stack_base + stack_size) ||
+         ((int *)c >= code_base && (int *)c < code_end);
+}
+
+static int
+valid_write_addr(void *addr)
+{
+  char *c = (char *)addr;
+  return (c >= data_base && c < data_end) ||
+         (c >= (char *)stack_base && c < (char *)stack_base + stack_size);
+}
+
 int
 run_program(int *pc, int *sp, int poolsz)
 {
   int *bp, a = 0, cycle;
   int i, *t;
+
+  // Set up sandbox bounds
+  stack_base = sp;
+  stack_size = poolsz;
 
   // setup stack: push argc/argv for main's params
   bp = sp = (int *)((int)sp + poolsz);
@@ -43,43 +71,74 @@ run_program(int *pc, int *sp, int poolsz)
       a = (int)(data_base + *pc++); // load data address from offset
     else if (i == JMP) {
       int _off = *pc++;
-      pc = code_base + _off;
+      int *target = code_base + _off;
+      if (target < code_base || target >= code_end) vm_abort();
+      pc = target;
     }
     else if (i == JSR) {
       sp = (int *)((char *)sp - sizeof(int));
+      if (sp < stack_base) vm_abort();
       *sp = (int)(pc + 1);
       int _off = *pc;
-      pc = code_base + _off;
+      int *target = code_base + _off;
+      if (target < code_base || target >= code_end) vm_abort();
+      pc = target;
     } else if (i == BZ) {
       int _off = *pc++;
-      pc = a ? pc : code_base + _off;
+      int *target = code_base + _off;
+      if (target < code_base || target >= code_end) vm_abort();
+      pc = a ? pc : target;
     }
     else if (i == BNZ) {
       int _off = *pc++;
-      pc = a ? code_base + _off : pc;
+      int *target = code_base + _off;
+      if (target < code_base || target >= code_end) vm_abort();
+      pc = a ? target : pc;
     }
     else if (i == ENT) {
+      int nlocals = *pc;
+      if ((char *)sp - sizeof(int) - nlocals * sizeof(int) < (char *)stack_base)
+        vm_abort();
       sp = (int *)((char *)sp - sizeof(int));
       *sp = (int)bp;
       bp = sp;
-      sp = (int *)((char *)sp - *pc++ * sizeof(int));
+      sp = (int *)((char *)sp - nlocals * sizeof(int));
+      ++pc;
     } // enter subroutine
-    else if (i == ADJ)
-      sp = (int *)((char *)sp + *pc++ * sizeof(int)); // stack adjust
+    else if (i == ADJ) {
+      int adj = *pc++;
+      int *new_sp = (int *)((char *)sp + adj * sizeof(int));
+      if (new_sp < stack_base ||
+          new_sp >= (int *)((char *)stack_base + stack_size))
+        vm_abort();
+      sp = new_sp;
+    } // stack adjust
     else if (i == LEV) {
+      if ((char *)bp < (char *)stack_base ||
+          (char *)bp >= (char *)stack_base + stack_size)
+        vm_abort();
       sp = bp;
       bp = (int *)*sp++;
       pc = (int *)*sp++;
     } // leave subroutine
-    else if (i == LI)
-      a = *(int *)a; // load int
-    else if (i == LC)
-      a = *(char *)a; // load char
-    else if (i == SI)
-      *(int *)*sp++ = a; // store int
-    else if (i == SC)
-      a = *(char *)*sp++ = a; // store char
+    else if (i == LI) {
+      if (!valid_read_addr((void *)a)) vm_abort();
+      a = *(int *)a;
+    } // load int
+    else if (i == LC) {
+      if (!valid_read_addr((void *)a)) vm_abort();
+      a = *(char *)a;
+    } // load char
+    else if (i == SI) {
+      if (!valid_write_addr((void *)*sp)) vm_abort();
+      *(int *)*sp++ = a;
+    } // store int
+    else if (i == SC) {
+      if (!valid_write_addr((void *)*sp)) vm_abort();
+      a = *(char *)*sp++ = a;
+    } // store char
     else if (i == PSH) {
+      if ((char *)sp - sizeof(int) < (char *)stack_base) vm_abort();
       sp = (int *)((char *)sp - sizeof(int));
       *sp = a;
     } // push
@@ -113,9 +172,9 @@ run_program(int *pc, int *sp, int poolsz)
     else if (i == MUL)
       a = *sp++ * a;
     else if (i == DIV)
-      a = *sp++ / a;
+      a = a ? *sp++ / a : 0;
     else if (i == MOD)
-      a = *sp++ % a;
+      a = a ? *sp++ % a : 0;
 
     else if (i == OPEN)
       a = open((char *)sp[1], *sp);
@@ -125,7 +184,9 @@ run_program(int *pc, int *sp, int poolsz)
       a = close(*sp);
     else if (i == PRTF) {
       t = sp + pc[1];
-      printf((char *)t[-1], t[-2], t[-3], t[-4], t[-5], t[-6]);
+      char *fmt = (char *)t[-1];
+      if (fmt < data_base || fmt >= data_end) vm_abort();
+      printf(fmt, t[-2], t[-3], t[-4], t[-5], t[-6]);
       a = 0;
     } else if (i == MALC)
       a = (int)malloc(*sp);
@@ -222,11 +283,16 @@ run_bytecode_file(char *filename)
   while (*rp && *rp != '\n') ++rp;
   if (*rp) ++rp;
 
-  // Allocate data
-  dat = (int *)malloc(data_count * sizeof(int) + 16);
+  // Allocate data (check for 32-bit overflow in malloc size)
+  uint64 dsize = (uint64)data_count * sizeof(int) + 16;
+  if (dsize > 0xFFFFFFFFULL) {
+    printf("data section too large\n"); free(fbuf); return -1;
+  }
+  dat = (int *)malloc((uint)dsize);
   if (!dat) { printf("malloc data failed\n"); free(fbuf); return -1; }
-  memset(dat, 0, data_count * sizeof(int) + 16);
+  memset(dat, 0, (uint)dsize);
   data_base = (char *)dat;
+  data_end = (char *)dat + (uint)dsize;
 
   for (i = 0; i < data_count; i++) {
     while (*rp == ' ' || *rp == '\n') ++rp;
@@ -250,11 +316,16 @@ run_bytecode_file(char *filename)
   while (*rp && *rp != '\n') ++rp;
   if (*rp) ++rp;
 
-  // Allocate code
-  code = (int *)malloc(code_count * sizeof(int) + 16);
+  // Allocate code (check for 32-bit overflow in malloc size)
+  uint64 csize = (uint64)code_count * sizeof(int) + 16;
+  if (csize > 0xFFFFFFFFULL) {
+    printf("code section too large\n"); free(fbuf); return -1;
+  }
+  code = (int *)malloc((uint)csize);
   if (!code) { printf("malloc code failed\n"); free(fbuf); return -1; }
-  memset(code, 0, code_count * sizeof(int) + 16);
+  memset(code, 0, (uint)csize);
   code_base = code;
+  code_end = (int *)((char *)code + (uint)csize);
 
   // Parse code: each line is an opcode name optionally followed by operand
   char *opnames[] = {

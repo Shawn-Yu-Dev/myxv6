@@ -8,6 +8,10 @@
 // VM base registers for position-independent bytecodes
 int *code_base;   // base address of code buffer
 char *data_base;  // base address of data buffer
+int *code_end;    // end of code buffer (exclusive)
+char *data_end;   // end of data buffer (exclusive)
+int *stack_base;  // bottom of stack
+int stack_size;   // stack buffer size in bytes
 
 // Global variable definitions
 char *p, *lp,   // current position in source code

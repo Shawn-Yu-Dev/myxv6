@@ -11,6 +11,10 @@ typedef int _int; // real 32-bit int for external interfaces
 // VM base registers for position-independent bytecodes
 extern int *code_base;   // base address of code buffer (e[])
 extern char *data_base;  // base address of data buffer (data[])
+extern int *code_end;    // end of code buffer (exclusive)
+extern char *data_end;   // end of data buffer (exclusive)
+extern int *stack_base;  // bottom of stack
+extern int stack_size;   // stack buffer size in bytes
 
 // Global variables
 extern char *p, *lp,   // current position in source code

@@ -41,10 +41,10 @@ int main(int argc, char** argv) {
     while (c < code + len) {
         switch (*c) {
             case '>':
-                p++; // 数据指针右移
+                if (p < tape + TAPE_SIZE - 1) p++; // 数据指针右移（边界保护）
                 break;
             case '<':
-                p--; // 数据指针左移
+                if (p > tape) p--; // 数据指针左移（边界保护）
                 break;
             case '+':
                 (*p)++; // 当前格子数值加 1

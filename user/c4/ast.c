@@ -1531,6 +1531,8 @@ main(_int argc, char **argv)
   // Set up base registers for position-independent addressing
   code_base = e;
   data_base = data;
+  code_end = (int *)((char *)code_base + poolsz);
+  data_end = (char *)data_base + poolsz;
   e = code_base - 1;  // make *++e write to index 0
 
   p = "char else enum if int return sizeof while "

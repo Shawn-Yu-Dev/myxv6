@@ -165,8 +165,11 @@ C4_SRCS=\
 	$U/hello.c\
 	$U/test_c89.c\
 
-fs.img: mkfs/mkfs $(UPROGS) $(C4_SRCS)
-	mkfs/mkfs fs.img $(UPROGS) $(C4_SRCS)
+EXTRA_FILES=\
+	$U/passwd\
+
+fs.img: mkfs/mkfs $(UPROGS) $(C4_SRCS) $(EXTRA_FILES)
+	mkfs/mkfs fs.img $(UPROGS) $(C4_SRCS) $(EXTRA_FILES)
 
 -include kernel/*.d user/*.d
 
