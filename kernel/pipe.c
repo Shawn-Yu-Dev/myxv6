@@ -17,6 +17,7 @@ struct pipe {
   uint nwrite;   // number of bytes written
   int readopen;  // read fd is still open
   int writeopen; // write fd is still open
+  int noblock;   // non-blocking mode
 };
 
 int
@@ -34,6 +35,7 @@ pipealloc(struct file **f0, struct file **f1)
   pi->writeopen = 1;
   pi->nwrite = 0;
   pi->nread = 0;
+  pi->noblock = 0;
   initlock(&pi->lock, "pipe");
   (*f0)->type = FD_PIPE;
   (*f0)->readable = 1;
@@ -87,6 +89,10 @@ pipewrite(struct pipe *pi, uint64 addr, int n)
     }
     if (pi->nwrite == pi->nread + PIPESIZE) { //DOC: pipewrite-full
       wakeup(&pi->nread);
+      if (pi->noblock) {
+        release(&pi->lock);
+        return i;
+      }
       sleep(&pi->nwrite, &pi->lock);
     } else {
       char ch;
@@ -111,6 +117,10 @@ piperead(struct pipe *pi, uint64 addr, int n)
 
   acquire(&pi->lock);
   while (pi->nread == pi->nwrite && pi->writeopen) { //DOC: pipe-empty
+    if (pi->noblock) {
+      release(&pi->lock);
+      return -1;
+    }
     if (killed(pr)) {
       release(&pi->lock);
       return -1;
@@ -131,4 +141,21 @@ piperead(struct pipe *pi, uint64 addr, int n)
   wakeup(&pi->nwrite); //DOC: piperead-wakeup
   release(&pi->lock);
   return i;
+}
+
+int
+pipe_set_noblock_fd(int fd)
+{
+  struct proc *p = myproc();
+  struct file *f;
+
+  if (fd < 0 || fd >= NOFILE || (f = p->ofile[fd]) == 0)
+    return -1;
+  if (f->type != FD_PIPE || f->pipe == 0)
+    return -1;
+
+  acquire(&f->pipe->lock);
+  f->pipe->noblock = 1;
+  release(&f->pipe->lock);
+  return 0;
 }

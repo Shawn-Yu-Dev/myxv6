@@ -24,6 +24,7 @@ directly in the OS, no cross-compiler needed.
 
 | Program | Description |
 |---------|-------------|
+| **`tty`** | Terminal multiplexer — manage up to 5 concurrent shell sessions. `tty1`-`tty5` switch windows; `Ctrl+A 1-5` or `Ctrl+A t` show/switch. |
 | **`ed`** | The classic line-oriented Unix text editor — edit files right from the shell. |
 | **`logo`** | Prints the X V6 ASCII banner. |
 | **`clear`** | Clears the terminal screen. |

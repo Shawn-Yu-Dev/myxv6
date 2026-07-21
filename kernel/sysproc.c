@@ -95,6 +95,14 @@ sys_kill(void)
   return kkill(pid);
 }
 
+uint64
+sys_pipe_noblock(void)
+{
+  int fd;
+  argint(0, &fd);
+  return pipe_set_noblock_fd(fd);
+}
+
 // return how many clock tick interrupts have occurred
 // since start.
 uint64
