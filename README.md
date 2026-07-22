@@ -24,7 +24,6 @@ directly in the OS, no cross-compiler needed.
 
 | Program | Description |
 |---------|-------------|
-| **`tty`** | Terminal multiplexer — manage up to 5 concurrent shell sessions. `tty1`-`tty5` switch windows; `Ctrl+A 1-5` or `Ctrl+A t` show/switch. |
 | **`ed`** | The classic line-oriented Unix text editor — edit files right from the shell. |
 | **`logo`** | Prints the X V6 ASCII banner. |
 | **`clear`** | Clears the terminal screen. |
@@ -51,10 +50,8 @@ Credentials are read from `/passwd` on the filesystem (format: `username:passwor
 
 | Program | Description |
 |---------|-------------|
-| **`usertests`** | The full xv6 user-space test suite. |
 | **`logstress`** | Stress-tests the journaling filesystem with concurrent writers. |
 | **`forphan` / `dorphan`** | Creates orphaned files/directories to test filesystem recovery. |
-| **`test-xv6.py`** | Automated QEMU-based testing script. |
 
 ---
 
@@ -77,13 +74,13 @@ Credentials are read from `/passwd` on the filesystem (format: `username:passwor
 │   │   └── run.c    # Bytecode interpreter + .s file loader
 │   ├── forth.c    # Forth interpreter
 │   ├── bf.c       # Brainfuck interpreter
+│   ├── init.c     # First user process (spawns login)
 │   ├── ed.c       # Line editor
 │   ├── login.c    # Login authentication
 │   ├── sh.c       # Shell
-│   ├── usertests.c  # Test suite
+│   ├── sync.c     # Sync syscall wrapper
 │   └── ...
 ├── mkfs/          # Filesystem image builder
-├── test-xv6.py    # Automated testing
 └── Makefile       # Build system
 ```
 
@@ -115,9 +112,15 @@ boots xv6 inside QEMU.
 | `make kernel/kernel` | Build kernel binary only |
 | `make fmt` | Format all source code with clang-format |
 
-### Automated Testing
+### Testing Programs
 
-All tests removed ...
+Run individual test programs from the xv6 shell after booting:
+
+```bash
+logstress                  # Stress-test the journaling filesystem
+forphan                    # Create orphaned files for recovery testing
+dorphan                    # Create orphaned directories for recovery testing
+```
 
 ---
 
