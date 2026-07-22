@@ -117,12 +117,7 @@ boots xv6 inside QEMU.
 
 ### Automated Testing
 
-```bash
-./test-xv6.py usertests      # Run full user test suite
-./test-xv6.py -q usertests   # Quick tests only
-./test-xv6.py crash          # Crash / recovery tests
-./test-xv6.py log            # Log crash test
-```
+All tests removed ...
 
 ---
 
