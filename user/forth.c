@@ -170,8 +170,8 @@ void exec_builtin(int op) {
     case OP_PLUS: b=dpop(); a=dpop(); dpush(a+b); break;
     case OP_MINUS: b=dpop(); a=dpop(); dpush(a-b); break;
     case OP_STAR: b=dpop(); a=dpop(); dpush(a*b); break;
-    case OP_SLASH: b=dpop(); a=dpop(); if(b==0){printf("Division by zero\n");exit(0);} dpush(a/b); break;
-    case OP_MOD: b=dpop(); a=dpop(); if(b==0){printf("Division by zero\n");exit(0);} dpush(a%b); break;
+    case OP_SLASH: b=dpop(); a=dpop(); if(b==0){printf("Division by zero\n");exit(0);} if(a==0x80000000 && b==-1){printf("INT_MIN / -1 overflow\n");exit(0);} dpush(a/b); break;
+    case OP_MOD: b=dpop(); a=dpop(); if(b==0){printf("Division by zero\n");exit(0);} if(a==0x80000000 && b==-1){printf("INT_MIN mod -1 overflow\n");exit(0);} dpush(a%b); break;
     case OP_EQUAL: b=dpop(); a=dpop(); dpush(a==b ? -1 : 0); break;
     case OP_LESS: b=dpop(); a=dpop(); dpush(a<b ? -1 : 0); break;
     case OP_GREATER: b=dpop(); a=dpop(); dpush(a>b ? -1 : 0); break;
@@ -304,8 +304,8 @@ void exec_builtin(int op) {
     }
 
     // 移位
-    case OP_SHL: { int n = dpop(); int x = dpop(); dpush(x << n); break; }
-    case OP_SHR: { int n = dpop(); int x = dpop(); dpush((unsigned)x >> n); break; }
+    case OP_SHL: { int n = dpop(); int x = dpop(); if (n < 0 || n >= 32) { printf("Invalid shift amount %d\n", n); exit(0); } dpush(x << n); break; }
+    case OP_SHR: { int n = dpop(); int x = dpop(); if (n < 0 || n >= 32) { printf("Invalid shift amount %d\n", n); exit(0); } dpush((unsigned)x >> n); break; }
 
     default: printf("Unknown builtin %d\n", op); exit(0);
   }
@@ -437,7 +437,7 @@ void compile_word(const char *word) {
         dict_append_byte(op);
         
         // 如果拷贝的是常量指令，必须连同 4 字节数据一起拷贝
-        if(op == OP_LIT) {
+        if(op == OP_LIT || op == OP_BRANCH || op == OP_0BRANCH) {
           for(int i = 0; i < 4; i++) {
             dict_append_byte(dict[ip++]);
           }

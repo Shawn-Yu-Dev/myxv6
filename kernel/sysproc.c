@@ -59,7 +59,8 @@ sys_sbrk(void)
       return -1;
     if (addr + n > TRAPFRAME)
       return -1;
-    myproc()->sz += n;
+    // Page-align the new size for lazy allocation
+    myproc()->sz = PGROUNDUP(addr + n);
   }
   return addr;
 }

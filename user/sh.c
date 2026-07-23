@@ -171,6 +171,9 @@ main(void)
     } else {
       if (fork1() == 0)
         runcmd(parsecmd(cmd));
+      // Reap any background children that have exited
+      while (wait(0) > 0)
+        ;
       wait(0);
     }
   }

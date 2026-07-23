@@ -507,20 +507,37 @@ forkret(void)
 {
   extern char userret[];
   static int first = 1;
+  static struct spinlock first_lock;
+  static int first_locked = 0;
   struct proc *p = myproc();
 
   // Still holding p->lock from scheduler.
   release(&p->lock);
 
+  if (!first_locked) {
+    initlock(&first_lock, "first");
+    first_locked = 1;
+  }
+
+  acquire(&first_lock);
   if (first) {
+    // Release so fsinit() (which may sleep on disk I/O) does not
+    // hold a spinlock across a sleep.
+    release(&first_lock);
+
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
     fsinit(ROOTDEV);
 
+    acquire(&first_lock);
     first = 0;
     // ensure other cores see first=0.
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+    // Release so other CPUs can proceed.  kexec() never returns on
+    // success, so the lock is released before calling it.
+    release(&first_lock);
 
     // We can invoke kexec() now that file system is initialized.
     // Put the return value (argc) of kexec into a0.
@@ -528,6 +545,8 @@ forkret(void)
     if (p->trapframe->a0 == -1) {
       panic("exec");
     }
+  } else {
+    release(&first_lock);
   }
 
   // return to user space, mimicing usertrap()'s return.
@@ -552,6 +571,9 @@ sleep(void *chan, struct spinlock *lk)
   // so it's okay to release lk.
 
   acquire(&p->lock); //DOC: sleeplock1
+  // Ensure interrupts stay disabled after releasing lk to prevent
+  // a timer interrupt from calling yield() before we set SLEEPING.
+  intr_off();
   release(lk);
 
   // Go to sleep.

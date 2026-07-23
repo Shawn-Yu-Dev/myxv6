@@ -57,6 +57,9 @@ kfree(void *pa)
   r = (struct run *)pa;
 
   acquire(&kmem.lock);
+  // Simple double-free check: only compare against head (avoids O(n²) in kinit)
+  if (kmem.freelist == r)
+    panic("kfree: double free");
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);

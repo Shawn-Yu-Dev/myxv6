@@ -57,7 +57,11 @@ argraw(int n)
 void
 argint(int n, int *ip)
 {
-  *ip = argraw(n);
+  uint64 val = argraw(n);
+  *ip = (int)val;
+  // Detect truncation: if val doesn't fit in an int, clamp
+  if ((int)val != val)
+    *ip = (val > 0x7FFFFFFFULL) ? 0x7FFFFFFF : 0x80000000;
 }
 
 // Retrieve an argument as a pointer.

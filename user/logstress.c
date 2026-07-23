@@ -14,7 +14,7 @@ int
 main(int argc, char **argv)
 {
   int fd, n;
-  enum { N = 250, SZ = 2000 };
+  enum { N = 250, SZ = 500 };
 
   for (int i = 1; i < argc; i++) {
     int pid1 = fork();

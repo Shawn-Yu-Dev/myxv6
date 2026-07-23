@@ -26,7 +26,12 @@ free(void *ap)
 {
   Header *bp, *p;
 
+  if (ap == 0)
+    return;
   bp = (Header *)ap - 1;
+  // Basic validation: size must be reasonable
+  if (bp->s.size == 0 || bp->s.size > 1000000)
+    return;
   for (p = freep; !(bp > p && bp < p->s.ptr); p = p->s.ptr)
     if (p >= p->s.ptr && (bp > p || bp < p->s.ptr))
       break;
@@ -66,6 +71,8 @@ malloc(uint nbytes)
   Header *p, *prevp;
   uint nunits;
 
+  if (nbytes > 0x7FFFFFFF - sizeof(Header) - 1)
+    return 0;
   nunits = (nbytes + sizeof(Header) - 1) / sizeof(Header) + 1;
   if ((prevp = freep) == 0) {
     base.s.ptr = freep = prevp = &base;

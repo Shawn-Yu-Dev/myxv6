@@ -110,7 +110,8 @@ consoleread(int user_dst, uint64 dst, int n)
       if (n < target) {
         // Save ^D for next time, to make sure
         // caller gets a 0-byte result.
-        cons.r--;
+        if (cons.r > 0)
+          cons.r--;
       }
       break;
     }

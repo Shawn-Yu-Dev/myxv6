@@ -272,3 +272,50 @@ Found a bug or have an idea? Open an issue or send a pull request.
 | Fix | File | Description |
 |-----|------|-------------|
 | **TRAPFRAME overlap** | `exec.c` | Added check preventing stack allocation from reaching `TRAPFRAME` (was causing `kernel panic`) |
+| **WFI with interrupts off** | `proc.c` | Fixed scheduler to call `wfi` with interrupts enabled (real hardware would hang) |
+| **forkret SMP race** | `proc.c` | Protected `first` flag with spinlock to prevent multi-core filesystem corruption |
+| **sleep() panic** | `proc.c` | Explicitly disabled interrupts before releasing condition lock in `sleep()` |
+| **kexit parent race** | `proc.c` | Saved `p->parent` under `wait_lock` before `wakeup()` |
+| **Missing TLB flushes** | `vm.c` | Added `sfence_vma()` after `uvmunmap()` and `uvmcopy()` |
+| **Lazy sbrk broken** | `vm.c` | Added `vmfault()` fallback to `copyinstr()` for lazy-allocated pages |
+| **Shared file offset race** | `file.c` | Added per-file spinlock to protect `f->off` from concurrent access after fork |
+| **Buffer cache TOCTOU** | `bio.c` | Added re-check of `dev`/`blockno` after acquiring buffer's sleep lock |
+| **iput() deadlock** | `fs.c` | Restructured to drop `itable.lock` before `acquiresleep()` |
+| **readi() wrong return** | `fs.c` | Return `-1` instead of `0` on integer overflow |
+| **Console buffer underflow** | `console.c` | Guard `cons.r--` against underflow on EOF putback |
+| **Console edit bounds** | `console.c` | Added `cons.e > cons.r` check before backspace |
+| **argint truncation** | `syscall.c` | Added truncation detection for 64-32 bit argument conversion |
+| **Lazy sbrk alignment** | `sysproc.c` | Page-align `p->sz` in lazy `sbrk` mode |
+| **Double-free detection** | `kalloc.c` | Added lightweight double-free check (comparison against freelist head only to avoid O(n²) during kinit) |
+
+**New kernel fixes (round 2):**
+
+| Fix | File | Description |
+|-----|------|-------------|
+| **forkret multi-core race** | `proc.c` | Added `first_lock` spinlock to protect `first` variable — prevents two CPUs from both running `fsinit()`/`kexec()` |
+| **Sleep atomicity** | `proc.c` | Added `intr_off()` before `release(lk)` in `sleep()` to prevent timer interrupt calling `yield()` between releasing the condition lock and setting `SLEEPING` |
+| **fileread lock-held-over-sleep** | `file.c` | Release `f->lock` before calling `readi()` (which may sleep on disk I/O) to avoid `sched()` panic (noff=2) |
+
+**User program fixes:**
+
+**User program fixes:**
+
+| Fix | File | Description |
+|-----|------|-------------|
+| **Hardcoded credentials** | `login.c` | Replaced `#define PASSWORD "root"` with file-based auth via `/passwd` |
+| **Password hashing** | `login.c` | Passwords stored as DJB2 hash instead of plaintext |
+| **Buffer sizes** | `login.c` | Increased username/password buffers from 32 to 64 bytes |
+| **Tape pointer overflow** | `bf.c` | Added bounds checks to `>` and `<` (was unlimited `p++`/`p--`) |
+| **Stack buffer overflows** | `ed.c` | Added `k < sizeof(pat)-1` checks to all 6 pattern/replacement parsers |
+| **64KB stack allocation** | `ed.c` | `do_move()`/`do_copy()` now use `malloc` instead of 64KB stack array |
+| **Unbounded strcpy** | `ed.c` | `my_strcpy()` replaced with bounded version (MAX_LINE_LEN limit) |
+| **Zero-length regex match** | `ed.c` | Fixed out-of-bounds read when pattern matches empty string at end of line |
+| **do_join silent truncation** | `ed.c` | Added pre-check for total length before joining lines |
+| **Branch operand inlining** | `forth.c` | `compile_word` now copies 4-byte operands for `OP_BRANCH`/`OP_0BRANCH` |
+| **Shift UB** | `forth.c` | Added bounds check (0-31) for shift amounts |
+| **INT_MIN overflow** | `forth.c` | Added `INT_MIN / -1` overflow check |
+| **Logstress overflow** | `logstress.c` | Fixed `memset` writing 2000 bytes into 500-byte buffer |
+| **Malloc overflow** | `umalloc.c` | Added integer overflow check in `nunits` computation |
+| **Free validation** | `umalloc.c` | Added NULL and size sanity checks in `free()` |
+| **Grep long lines** | `grep.c` | Handle lines longer than 1023 bytes without silent truncation |
+| **Zombie accumulation** | `sh.c` | Added non-blocking reaping of background children |

@@ -35,6 +35,7 @@ filealloc(void)
   for (f = ftable.file; f < ftable.file + NFILE; f++) {
     if (f->ref == 0) {
       f->ref = 1;
+      initlock(&f->lock, "file");
       release(&ftable.lock);
       return f;
     }
@@ -119,8 +120,14 @@ fileread(struct file *f, uint64 addr, int n)
     r = devsw[f->major].read(1, addr, n);
   } else if (f->type == FD_INODE) {
     ilock(f->ip);
-    if ((r = readi(f->ip, 1, addr, f->off, n)) > 0)
+    acquire(&f->lock);
+    uint off = f->off;
+    release(&f->lock);
+    if ((r = readi(f->ip, 1, addr, off, n)) > 0) {
+      acquire(&f->lock);
       f->off += r;
+      release(&f->lock);
+    }
     iunlock(f->ip);
   } else {
     panic("fileread");
@@ -159,8 +166,10 @@ filewrite(struct file *f, uint64 addr, int n)
 
       begin_op();
       ilock(f->ip);
+      acquire(&f->lock);
       if ((r = writei(f->ip, 1, addr + i, f->off, n1)) > 0)
         f->off += r;
+      release(&f->lock);
       iunlock(f->ip);
       end_op();
 

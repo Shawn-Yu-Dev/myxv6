@@ -6,11 +6,20 @@
 #define CRED_FILE "/passwd"
 #define MAX_LINE 64
 
+// Simple hash to avoid storing plaintext passwords
+unsigned int hash_password(const char *s) {
+    unsigned int h = 5381;
+    int c;
+    while ((c = *s++))
+        h = ((h << 5) + h) + c;
+    return h;
+}
+
 int
 main(int argc,char *argv[])
 {
-  char username[32];
-  char password[32];
+  char username[64];
+  char password[64];
   char file_user[MAX_LINE];
   int fd;
 
@@ -24,20 +33,26 @@ main(int argc,char *argv[])
   file_user[n] = '\0';
   close(fd);
 
-  // Parse user:pass
+  // Parse user:hash (password is stored as numeric hash, not plaintext)
   char *colon = file_user;
   while (*colon && *colon != ':') colon++;
   if (*colon != ':') {
-    printf("Invalid format in %s (expected user:pass)\n", CRED_FILE);
+    printf("Invalid format in %s (expected user:hash)\n", CRED_FILE);
     exit(1);
   }
   *colon = '\0';
   char *u = file_user;
-  char *p = colon + 1;
-  // Strip trailing newline from password
-  int plen = 0;
-  while (p[plen] && p[plen] != '\n') plen++;
-  p[plen] = '\0';
+  char *hashstr = colon + 1;
+  // Strip trailing newline from hash
+  int hlen = 0;
+  while (hashstr[hlen] && hashstr[hlen] != '\n') hlen++;
+  hashstr[hlen] = '\0';
+  // Parse the stored hash value
+  unsigned int stored_hash = 0;
+  for (int i = 0; hashstr[i]; i++) {
+    if (hashstr[i] >= '0' && hashstr[i] <= '9')
+      stored_hash = stored_hash * 10 + (hashstr[i] - '0');
+  }
 
   // 准备需要传递的参数
   char *sh_args[] = { "sh", 0 };
@@ -56,7 +71,7 @@ main(int argc,char *argv[])
       password[strlen(password) - 1] = '\0';
     }
 
-    if (strcmp(username, u) == 0 && strcmp(password, p) == 0) {
+    if (strcmp(username, u) == 0 && hash_password(password) == stored_hash) {
       printf("\nLogin successful! \n");
 
       int pid = fork();

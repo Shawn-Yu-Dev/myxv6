@@ -210,6 +210,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     }
     *pte = 0;
   }
+  sfence_vma();
 }
 
 // Allocate PTEs and physical memory to grow a process from oldsz to
@@ -318,6 +319,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       goto err;
     }
   }
+  sfence_vma();
   return 0;
 
 err:
@@ -417,8 +419,11 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   while (got_null == 0 && max > 0) {
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
-    if (pa0 == 0)
-      return -1;
+    if (pa0 == 0) {
+      if ((pa0 = vmfault(pagetable, va0, 0)) == 0) {
+        return -1;
+      }
+    }
     n = PGSIZE - (srcva - va0);
     if (n > max)
       n = max;
@@ -467,7 +472,8 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   if (mem == 0)
     return 0;
   memset((void *)mem, 0, PGSIZE);
-  if (mappages(p->pagetable, va, PGSIZE, mem, PTE_W | PTE_U | PTE_R) != 0) {
+  int perm = PTE_U | PTE_R | (read ? 0 : PTE_W);
+  if (mappages(p->pagetable, va, PGSIZE, mem, perm) != 0) {
     kfree((void *)mem);
     return 0;
   }

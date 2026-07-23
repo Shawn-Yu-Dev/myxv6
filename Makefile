@@ -150,7 +150,6 @@ UPROGS=\
 	$U/_rm\
 	$U/_sh\
 	$U/_stressfs\
-	$U/_kerneltests\
 	$U/_login\
 	$U/_logo\
 	$U/_grind\
@@ -160,12 +159,6 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_sync\
-	$U/_tty\
-	$U/_tty1\
-	$U/_tty2\
-	$U/_tty3\
-	$U/_tty4\
-	$U/_tty5\
 
 C4_SRCS=\
 	$U/hello.c\

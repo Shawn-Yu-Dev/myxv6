@@ -342,12 +342,12 @@ iput(struct inode *ip)
 
   if (ip->ref == 1 && ip->valid && ip->nlink == 0) {
     // inode has no links and no other references: truncate and free.
-
-    // ip->ref == 1 means no other process can have ip locked,
-    // so this acquiresleep() won't block (or deadlock).
-    acquiresleep(&ip->lock);
-
+    // Drop itable lock before acquiring sleep lock to avoid deadlock.
+    // Re-check ref after re-acquiring itable lock.
+    ip->ref++;
     release(&itable.lock);
+
+    acquiresleep(&ip->lock);
 
     itrunc(ip);
     ip->type = 0;
@@ -357,6 +357,7 @@ iput(struct inode *ip)
     releasesleep(&ip->lock);
 
     acquire(&itable.lock);
+    ip->ref--; // remove the extra ref we added
   }
 
   ip->ref--;
@@ -499,7 +500,7 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
   struct buf *bp;
 
   if (off > ip->size || off + n < off)
-    return 0;
+    return -1;
   if (off + n > ip->size)
     n = ip->size - off;
 

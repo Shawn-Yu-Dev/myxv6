@@ -54,8 +54,12 @@ int my_strlen(const char *s) {
 }
 
 void my_strcpy(char *dst, const char *src) {
-    while ((*dst++ = *src++))
-        ;
+    int i = 0;
+    while (src[i] && i < MAX_LINE_LEN - 1) {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
 }
 
 int my_strcmp(const char *a, const char *b) {
@@ -445,15 +449,21 @@ void do_join(int from, int to) {
         error("out of range");
         return;
     }
+    // Check total length first to avoid silent truncation
+    int total_len = 0;
+    for (int i = from; i <= to; i++)
+        total_len += my_strlen(buffer[i]);
+    if (total_len >= MAX_LINE_LEN - 1) {
+        error("result too long");
+        return;
+    }
     save_undo();
     char *dest = buffer[from];
     int dlen = my_strlen(dest);
     for (int i = from + 1; i <= to; i++) {
         int slen = my_strlen(buffer[i]);
-        if (dlen + slen < MAX_LINE_LEN - 1) {
-            for (int j = 0; j < slen; j++)
-                dest[dlen++] = buffer[i][j];
-        }
+        for (int j = 0; j < slen; j++)
+            dest[dlen++] = buffer[i][j];
         dest[dlen] = '\0';
     }
     delete_lines(from + 1, to);
@@ -463,9 +473,14 @@ void do_join(int from, int to) {
 
 void do_move(int from, int to, int dest) {
     int count = to - from + 1;
-    char saved[MAX_LINES][MAX_LINE_LEN];
-    for (int i = 0; i < count; i++)
+    // Use heap allocation to avoid 64KB stack overflow
+    char **saved = malloc(count * sizeof(char *));
+    if (!saved) { error("out of memory"); return; }
+    for (int i = 0; i < count; i++) {
+        saved[i] = malloc(MAX_LINE_LEN);
+        if (!saved[i]) { error("out of memory"); for (int j = 0; j < i; j++) free(saved[j]); free(saved); return; }
         my_strcpy(saved[i], buffer[from + i]);
+    }
 
     save_undo();
     delete_lines(from, to);
@@ -479,17 +494,24 @@ void do_move(int from, int to, int dest) {
 
     for (int i = 0; i < count; i++) {
         insert_line(dest, saved[i]);
+        free(saved[i]);
         dest++;
     }
+    free(saved);
     current_line = dest - 1;
     modified = 1;
 }
 
 int do_copy(int from, int to, int dest) {
     int count = to - from + 1;
-    char saved[MAX_LINES][MAX_LINE_LEN];
-    for (int i = 0; i < count; i++)
+    // Use heap allocation to avoid 64KB stack overflow
+    char **saved = malloc(count * sizeof(char *));
+    if (!saved) { error("out of memory"); return 0; }
+    for (int i = 0; i < count; i++) {
+        saved[i] = malloc(MAX_LINE_LEN);
+        if (!saved[i]) { error("out of memory"); for (int j = 0; j < i; j++) free(saved[j]); free(saved); return 0; }
         my_strcpy(saved[i], buffer[from + i]);
+    }
 
     save_undo();
     if (dest < -1) dest = -1;
@@ -497,8 +519,10 @@ int do_copy(int from, int to, int dest) {
 
     for (int i = 0; i < count; i++) {
         insert_line(dest, saved[i]);
+        free(saved[i]);
         dest++;
     }
+    free(saved);
     current_line = dest - 1;
     modified = 1;
     return 1;
